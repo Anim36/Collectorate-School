@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Bengali numerals and currency.
+ * Figma draws currency values such as "৳ 3,000" in Noto Sans Bengali, whose
+ * text node measures 116px at 32px semibold — one pixel wider than the card's
+ * content box, which is what makes the value wrap onto a second line in the
+ * narrow tablet card. The font is loaded in full rather than through
+ * next/font so the taka sign keeps the advance Figma draws it with.
+ */
+@font-face {
+  font-family: "Noto Sans Bengali Numeric";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/notosansbengali/v21/NotoSansBengali-Regular.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "Noto Sans Bengali Numeric";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/notosansbengali/v21/NotoSansBengali-SemiBold.woff2")
+    format("woff2");
+}
+
+/**
+ * Semantic colour tokens — Figma variables
+ * Light  : node 2:33  "00 · Foundations & reusable components"
+ * Dark   : node 2:28578 "02 · Dark theme components"
+ */
+@layer base {
+  :root,
+  .light {
+    /* Figma · Palette Light */
+    --background: 220 20% 98%; /* #F8FAFC */
+    --surface: 0 0% 100%; /* #FFFFFF */
+    --primary: 224 64% 33%; /* #1E3A8A */
+    --sky: 217 91% 60%; /* #3B82F6 */
+    --amber: 38 92% 50%; /* #F59E0B */
+    --success: 142 71% 29%; /* #16803D */
+    --danger: 0 72% 51%; /* #DC2626 */
+    --ink: 222 47% 11%; /* #0F172A */
+    --muted: 214 18% 39%; /* #526277 — Figma "muted" copy colour */
+    --muted-foreground: 214 18% 39%;
+    --muted-surface: 214 32% 96%;
+    --border: 212 36% 91%; /* #DFE7F0 */
+    --white: 0 0% 100%; /* #FFFFFF */
+    --action: 224 64% 33%; /* #1E3A8A */
+    --tint: 217 100% 97%; /* #EFF5FF — badge / table header / option surface */
+    --navy: 222 68% 21%; /* #112759 */
+    --shadow-color: 222 47% 11%;
+
+    /* shadcn/ui semantic aliases mapped onto the Figma tokens */
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive-foreground: 0 0% 100%;
+    --danger-foreground: 0 0% 100%;
+    --input: 212 36% 91%;
+    --ring: 224 64% 33%;
+
+    --radius: 12px;
+  }
+
+  .dark {
+    /* Figma · Palette Dark */
+    --background: 220 49% 8%; /* #0B1220 */
+    --surface: 217 48% 13%; /* #111D30 */
+    --primary: 219 100% 79%; /* #93B8FF */
+    --sky: 213 94% 68%; /* #60A5FA */
+    --amber: 43 96% 56%; /* #FBBF24 */
+    --success: 147 61% 64%; /* #69DB9D */
+    --danger: 0 100% 79%; /* #FF9292 */
+    --ink: 210 40% 96%; /* #F1F5F9 */
+    --muted: 213 29% 74%; /* #AABBD0 — Figma "muted" copy colour */
+    --muted-foreground: 213 29% 74%;
+    --muted-surface: 215 52% 19%;
+    --border: 215 31% 24%; /* #2A3A50 */
+    --white: 0 0% 100%; /* #FFFFFF */
+    --action: 221 83% 53%; /* #2563EB */
+    --tint: 215 52% 19%; /* #172C49 */
+    --navy: 217 71% 11%; /* #08172F */
+    --shadow-color: 0 0% 0%;
+
+    /* shadcn/ui semantic aliases mapped onto the Figma tokens */
+    --foreground: 210 40% 96%;
+    --card: 217 48% 13%;
+    --card-foreground: 210 40% 96%;
+    --popover: 217 48% 13%;
+    --popover-foreground: 210 40% 96%;
+    --primary-foreground: 217 71% 11%;
+    --secondary: 215 52% 19%;
+    --secondary-foreground: 210 40% 96%;
+    --accent: 213 94% 68%;
+    --accent-foreground: 217 71% 11%;
+    --destructive-foreground: 217 71% 11%;
+    --danger-foreground: 217 71% 11%;
+    --input: 215 31% 24%;
+    --ring: 219 100% 79%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-ink font-sans antialiased;
+    font-size: 16px;
+    line-height: 1.45;
+  }
+
+  /* Bengali copy renders in Hind Siliguri across the whole product. */
+  :lang(bn),
+  .font-bengali {
+    font-family: var(--font-hind-siliguri), var(--font-inter), sans-serif;
+  }
+
+  /* Currency values carry the taka sign, which Noto Sans Bengali sets at the
+     width Figma draws it with. */
+  .font-numeric-bengali {
+    font-family: "Noto Sans Bengali Numeric", var(--font-inter), sans-serif;
+  }
+}
+
+/**
+ * Printing a receipt.
+ * The receipt page prints on A4: the shell, the navigation and the actions are
+ * hidden, so only the receipt itself reaches the paper.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  /* The shell around the receipt. */
+  [data-portal="sidebar"],
+  [data-portal="top-bar"],
+  [data-portal="bottom-nav"] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Only the receipt reaches the paper: the page heading, the fee blocks and
+     the actions stay on the screen. */
+  [data-receipt="screen"],
+  [data-receipt="action"] {
+    display: none !important;
+  }
+
+  /* The receipt card keeps its frame, but loses the surface fill. */
+  [data-receipt="card"] {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}
