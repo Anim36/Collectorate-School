@@ -245,7 +245,14 @@ const expression = `(() => {
     const out = [];
     for (const el of parent.children) {
       const style = getComputedStyle(el);
-      if (style.display === 'contents') {
+      if (style.display === 'none') {
+        // A hidden element takes no space, so it is not a block of the page.
+        continue;
+      } else if (style.position === 'absolute') {
+        // A file input that only the screen readers read is taken out of the
+        // flow, so it is not a block of the page either.
+        continue;
+      } else if (style.display === 'contents') {
         out.push(...flatten(el));
       } else if (style.display === 'grid' || style.display === 'inline-grid') {
         out.push(...gridRows(el));

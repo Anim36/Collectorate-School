@@ -417,6 +417,13 @@ export interface AdminCheckboxGroupProps<TOption extends string> {
   selected: readonly TOption[];
   /** Fired with the full set of ticked options. */
   onChange: (selected: readonly TOption[]) => void;
+  /**
+   * The name an option is shown under.
+   *
+   * The options are the values of the database, so they need a name of their
+   * own: "PUBLIC" is shown as "Public".
+   */
+  optionLabel?: (option: TOption) => string;
   className?: string;
 }
 
@@ -433,6 +440,7 @@ export function AdminCheckboxGroup<TOption extends string>({
   options,
   selected,
   onChange,
+  optionLabel,
   className,
 }: AdminCheckboxGroupProps<TOption>) {
   const toggle = (option: TOption) => {
@@ -469,7 +477,7 @@ export function AdminCheckboxGroup<TOption extends string>({
                 onChange={() => toggle(option)}
                 className="size-4 shrink-0 rounded-[4px] border border-border accent-[hsl(var(--action))]"
               />
-              {option}
+              {optionLabel ? optionLabel(option) : option}
             </label>
           );
         })}

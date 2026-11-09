@@ -284,17 +284,9 @@ export const adminRoutine: Record<AdminRoutineDay, readonly string[]> = {
   ],
 };
 
-/** The classes the routine is available for. */
-export const ADMIN_ROUTINE_CLASSES = [
-  "Class 9",
-  "Class 10",
-  "Class 8",
-] as const;
-
-/** The sections available for each class. */
-export const ADMIN_ROUTINE_SECTIONS = ["Section A", "Section B", "Section C"] as const;
-
-/** The footnote under the routine table, as Figma draws it. */
+/**
+ * The footnote under the routine table, as Figma draws it.
+ */
 export const ADMIN_ROUTINE_NOTE =
   "Morning periods 1–4 shown · Select a cell to assign a subject.";
 

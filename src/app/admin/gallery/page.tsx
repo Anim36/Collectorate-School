@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 
 import { AdminGallery } from "@/components/admin/admin-gallery";
+import {
+  listAlbumsAction,
+  listPendingPhotosAction,
+} from "@/app/admin/actions";
 
 export const metadata: Metadata = {
   title: "Gallery",
@@ -13,6 +17,18 @@ export const metadata: Metadata = {
  * the matching dark frames): the album table, the approval queue and the media
  * upload block.
  */
-export default function AdminGalleryPage() {
-  return <AdminGallery />;
+export default async function AdminGalleryPage() {
+  // The albums and the photographs waiting for approval come from the
+  // database, so the table shows the albums the school really has.
+  const [albums, pending] = await Promise.all([
+    listAlbumsAction({}),
+    listPendingPhotosAction(),
+  ]);
+
+  return (
+    <AdminGallery
+      initialAlbums={albums.ok ? albums.data : null}
+      initialPending={pending.ok ? pending.data : []}
+    />
+  );
 }

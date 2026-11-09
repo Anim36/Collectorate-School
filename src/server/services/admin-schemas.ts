@@ -81,7 +81,20 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
 /** The edit-user input. */
 export type EditUserInput = z.infer<typeof editUserSchema>;
 
-/** The answer every service call gives. */
+/**
+ * The answer every service call gives.
+ *
+ * A refusal carries the machine readable reason as well as the message, so a
+ * check can tell an empty file from a file of an unknown type.
+ */
 export type ServiceResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: string };
+  | { ok: false; error: string; reason?: ServiceRejection };
+
+/** The reasons a service refuses a request for. */
+export type ServiceRejection =
+  | "EMPTY"
+  | "TOO_LARGE"
+  | "TOO_MANY"
+  | "UNKNOWN_TYPE"
+  | "INVALID";

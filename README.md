@@ -48,6 +48,9 @@ The dev server runs on <http://localhost:3000>.
 | `npm run qa:auth-logout` | The sign-out control, driven in the debug browser. |
 | `npm run qa:admin` | The admin services: the accounts, the classes, the subjects and the CSV import. |
 | `npm run qa:admin-roles` | The admin server actions over HTTP: an admin may run them, nobody else may. |
+| `npm run qa:admin-11b` | The admin notices, gallery, routine and calendar services. |
+| `npm run qa:admin-11b-security` | The upload rules, the file names and the sanitizing of the notice body. |
+| `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP. Needs the server on port 3111. |
 
 ### Environment
 
@@ -95,6 +98,24 @@ there are no A/B/C sections, no boy/girl split and no shifts.
 The server-side client is `src/server/db.ts`. It reads `DATABASE_URL` when the
 first query runs and parks the connection pool on `globalThis`, so the dev
 server does not open a new pool on every reload.
+
+### The uploaded files
+
+The files an admin uploads do not live under `public`. They are written to the
+`uploads` folder at the project root, under a random name the server picks,
+and the row in `stored_files` is what points at them. Nothing is served
+straight from the disk: `src/app/api/files/[id]` decides who may have each
+file.
+
+| | |
+| --- | --- |
+| The types | JPEG, PNG, WebP and PDF, worked out from the bytes of the file and not from its name or the type the browser sent. |
+| The sizes | 5 MB for an image, 10 MB for a document, ten files in one request. |
+| The visibility | An approved photograph of a public album is served to anybody; the attachment of a published notice is served to the audience it was addressed to; a photograph that waits for the admin and the attachment of a draft notice are served to an admin only. |
+
+`src/server/storage.ts` is the only module that touches the file system, so
+the storage can later be swapped for Cloudinary or S3 by replacing that one
+file.
 
 ### Signing in
 

@@ -52,7 +52,7 @@ export function PortalSidebar({
         href="/"
         className="w-[192px] shrink-0 text-[20px] font-bold leading-[1.45] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
       >
-        [School Name]
+        Narail Collectorate School
       </Link>
 
       <p className="w-[192px] shrink-0 text-[11px] font-medium leading-[1.45] text-white">

@@ -19,7 +19,7 @@ export function AuthHeader() {
         href="/"
         className="text-[20px] font-bold leading-[1.45] text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        [School Name]
+        Narail Collectorate School
       </Link>
 
       <div className="flex shrink-0 items-center gap-2">

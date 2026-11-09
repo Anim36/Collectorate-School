@@ -46,6 +46,9 @@ next-env.d.ts
 /figma-tmp/
 /.tmp-*
 
+# the files the admin uploads; they live on the disk, not in the repository
+/uploads/
+
 # local verification scripts output
 /tmp/
 

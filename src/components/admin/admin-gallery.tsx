@@ -9,18 +9,38 @@ import {
 } from "@/components/admin/admin-fields";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { useSetPortalSection } from "@/components/layout/portal-section-context";
+import { EmptyState } from "@/components/shared/empty-state";
+import { LoadingSkeleton } from "@/components/shared/loading-skeleton";
 import { PortalTable } from "@/components/shared/portal-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { adminGreeting } from "@/data/admin";
+import { encodeFile } from "@/lib/file-transfer";
 import {
-  ADMIN_ALBUM_CATEGORIES,
-  adminAlbums,
-  adminPhotoReviews,
-  type AdminAlbum,
-  type AdminPhotoReview,
-} from "@/data/admin-11b";
+  approvePhotoAction,
+  deleteAlbumAction,
+  listAlbumsAction,
+  listPendingPhotosAction,
+  rejectPhotoAction,
+  saveAlbumAction,
+  uploadPhotosAction,
+} from "@/app/admin/actions";
+import type {
+  AdminAlbumList,
+  AdminAlbumRow,
+  AdminPhotoReviewRow,
+} from "@/types/admin-11b";
+
+/** The categories the gallery filter offers. */
+const ALBUM_CATEGORIES = ["All categories", "Academic", "Culture", "Sports"];
+
+export interface AdminGalleryProps {
+  /** The albums the server read for the first page. */
+  initialAlbums: AdminAlbumList | null;
+  /** The photographs that are waiting for the admin. */
+  initialPending: AdminPhotoReviewRow[];
+}
 
 /**
  * The admin gallery page.
@@ -39,48 +59,114 @@ import {
  * sits behind the "Approvals" switch on the heading row, so the albums keep
  * the exact rhythm Figma measures.
  *
- * Everything happens in memory.
+ * The albums and the photographs are read from the database: a photograph
+ * that is approved is shown in the album, and one that is still waiting is
+ * held in the queue until the admin decides.
  */
-export function AdminGallery() {
+export function AdminGallery({ initialAlbums, initialPending }: AdminGalleryProps) {
   const { toast } = useToast();
 
   const [view, setView] = React.useState<"albums" | "approvals">("albums");
-  const [albums, setAlbums] = React.useState<readonly AdminAlbum[]>(adminAlbums);
-  const [reviews, setReviews] = React.useState<readonly AdminPhotoReview[]>(
-    adminPhotoReviews,
+  const [albums, setAlbums] = React.useState<readonly AdminAlbumRow[]>(
+    initialAlbums?.rows ?? [],
+  );
+  const [reviews, setReviews] = React.useState<readonly AdminPhotoReviewRow[]>(
+    initialPending,
   );
   const [query, setQuery] = React.useState("");
-  const [category, setCategory] = React.useState<string>(
-    ADMIN_ALBUM_CATEGORIES[0],
+  const [category, setCategory] = React.useState<string>(ALBUM_CATEGORIES[0]);
+  const [busy, setBusy] = React.useState(false);
+
+  // The lists are read again when the filters change, so the page shows that
+  // it is waiting while the new rows are on their way.
+  const [loading, setLoading] = React.useState(false);
+
+  // The file picker is opened by the "Browse photos" button.
+  const fileInput = React.useRef<HTMLInputElement>(null);
+
+  // The album the photographs are uploaded into.
+  const [uploadAlbumId, setUploadAlbumId] = React.useState<string>(
+    initialAlbums?.rows[0]?.id ?? "",
   );
 
   // The top bar names the section, as Figma draws it.
   useSetPortalSection("Gallery");
 
-  const filtered = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  /**
+   * Reads the albums from the server.
+   */
+  const loadAlbums = React.useCallback(
+    async (nextQuery: string, nextCategory: string) => {
+      setLoading(true);
 
-    return albums.filter((album) => {
-      const matchesCategory =
-        category === ADMIN_ALBUM_CATEGORIES[0] || album.category === category;
-      if (!matchesCategory) return false;
-      if (needle === "") return true;
+      const result = await listAlbumsAction({
+        query: nextQuery,
+        category: nextCategory === ALBUM_CATEGORIES[0] ? "ALL" : nextCategory,
+      });
 
-      return album.title.toLowerCase().includes(needle);
+      setLoading(false);
+
+      if (!result.ok) {
+        toast({
+          title: "Could not load the albums",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setAlbums(result.data.rows);
+    },
+    [toast],
+  );
+
+  // The albums are read again when the filters change.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadAlbums(query, category);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [query, category, loadAlbums]);
+
+  /**
+   * Reads the photographs that are waiting for the admin.
+   */
+  const loadPending = async () => {
+    const result = await listPendingPhotosAction();
+
+    if (!result.ok) {
+      toast({
+        title: "Could not load the approvals",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setReviews(result.data);
+  };
+
+  /**
+   * Creates an album.
+   */
+  const createAlbum = async () => {
+    const result = await saveAlbumAction({
+      title: `New album ${albums.length + 1}`,
+      category: "Academic",
+      visibility: "PUBLIC",
     });
-  }, [albums, query, category]);
 
-  const createAlbum = () => {
-    setAlbums((previous) => [
-      ...previous,
-      {
-        id: `album-${previous.length + 1}`,
-        title: `New album ${previous.length + 1}`,
-        photoCount: 0,
-        visibility: "Public",
-        category: "Academic",
-      },
-    ]);
+    if (!result.ok) {
+      toast({
+        title: "Album not created",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await loadAlbums(query, category);
 
     toast({
       title: "Album created",
@@ -88,15 +174,31 @@ export function AdminGallery() {
     });
   };
 
-  const renameAlbum = (album: AdminAlbum) => {
+  /**
+   * Renames an album.
+   */
+  const renameAlbum = async (album: AdminAlbumRow) => {
     const title = window.prompt("Album name", album.title);
+
     if (!title || title === album.title) return;
 
-    setAlbums((previous) =>
-      previous.map((entry) =>
-        entry.id === album.id ? { ...entry, title } : entry,
-      ),
-    );
+    const result = await saveAlbumAction({
+      id: album.id,
+      title,
+      category: album.category,
+      visibility: album.visibility === "Public" ? "PUBLIC" : "TEACHERS",
+    });
+
+    if (!result.ok) {
+      toast({
+        title: "Album not renamed",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await loadAlbums(query, category);
 
     toast({
       title: "Album renamed",
@@ -104,60 +206,170 @@ export function AdminGallery() {
     });
   };
 
-  const reviewPhoto = (
-    photo: AdminPhotoReview,
-    state: AdminPhotoReview["state"],
-  ) => {
-    setReviews((previous) =>
-      previous.map((entry) =>
-        entry.id === photo.id ? { ...entry, state } : entry,
-      ),
-    );
+  /**
+   * Removes an album that holds no photographs.
+   */
+  const removeAlbum = async (album: AdminAlbumRow) => {
+    const result = await deleteAlbumAction(album.id);
+
+    if (!result.ok) {
+      toast({
+        title: "Album not deleted",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await loadAlbums(query, category);
 
     toast({
-      title: state === "Approved" ? "Photo approved" : "Photo rejected",
-      description:
-        state === "Approved"
-          ? `${photo.name} is now visible in the album.`
-          : `${photo.name} was sent back to the teacher.`,
+      title: "Album deleted",
+      description: `“${album.title}” was removed.`,
+    });
+  };
+
+  /**
+   * Approves a photograph.
+   */
+  const approve = async (photo: AdminPhotoReviewRow) => {
+    const result = await approvePhotoAction(photo.id);
+
+    if (!result.ok) {
+      toast({
+        title: "Photo not approved",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await loadPending();
+
+    toast({
+      title: "Photo approved",
+      description: `${photo.name} is now visible in the album.`,
+    });
+  };
+
+  /**
+   * Sends a photograph back to the teacher who uploaded it.
+   */
+  const reject = async (photo: AdminPhotoReviewRow) => {
+    const reason = window.prompt(
+      "Why is the photo being sent back?",
+      "The photo does not meet the album rules.",
+    );
+
+    if (reason === null) return;
+
+    const result = await rejectPhotoAction(photo.id, reason);
+
+    if (!result.ok) {
+      toast({
+        title: "Photo not rejected",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await loadPending();
+
+    toast({
+      title: "Photo rejected",
+      description: `${photo.name} was sent back to the teacher.`,
+    });
+  };
+
+  /**
+   * Uploads photographs into an album.
+   *
+   * The photographs an admin uploads are approved straight away.
+   */
+  const uploadPhotos = async (files: File[]) => {
+    const albumId = uploadAlbumId || albums[0]?.id;
+
+    if (!albumId) {
+      toast({
+        title: "No album to upload into",
+        description: "Create an album first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBusy(true);
+
+    const payloads = await Promise.all(files.map(encodeFile));
+
+    const result = await uploadPhotosAction({ albumId, files: payloads });
+
+    setBusy(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Photos not uploaded",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await loadAlbums(query, category);
+
+    toast({
+      title: "Photos uploaded",
+      description: `${result.data.uploaded} photo(s) were added to the album.`,
     });
   };
 
   const albumColumns = [
-    { header: "Album", cell: (row: AdminAlbum) => row.title },
-    { header: "Photos", cell: (row: AdminAlbum) => String(row.photoCount) },
-    { header: "Visibility", cell: (row: AdminAlbum) => row.visibility },
+    { header: "Album", cell: (row: AdminAlbumRow) => row.title },
+    { header: "Photos", cell: (row: AdminAlbumRow) => String(row.photoCount) },
+    { header: "Visibility", cell: (row: AdminAlbumRow) => row.visibility },
     {
       header: "Actions",
-      cell: (row: AdminAlbum) => (
+      cell: (row: AdminAlbumRow) => (
         <span className="flex flex-wrap items-center gap-x-1">
           <RowAction onClick={() => renameAlbum(row)}>Edit</RowAction>
           <span aria-hidden className="text-muted">
             ·
           </span>
-          <RowAction onClick={createAlbum}>Add photos</RowAction>
+          <RowAction
+            onClick={() => {
+              setUploadAlbumId(row.id);
+              fileInput.current?.click();
+            }}
+          >
+            Add photos
+          </RowAction>
+          <span aria-hidden className="text-muted">
+            ·
+          </span>
+          <RowAction onClick={() => removeAlbum(row)}>Delete</RowAction>
         </span>
       ),
     },
   ];
 
-  const albumRecords = filtered.map((row) => ({
+  const albumRecords = albums.map((row) => ({
     id: row.id,
     lines: [
       { label: "Album", value: row.title },
       { label: "Photos", value: String(row.photoCount) },
       { label: "Visibility", value: row.visibility },
-      { label: "Actions", value: "Edit · Add photos" },
+      { label: "Actions", value: "Edit · Add photos · Delete" },
     ],
   }));
 
   const reviewColumns = [
-    { header: "Photo", cell: (row: AdminPhotoReview) => row.name },
-    { header: "Album", cell: (row: AdminPhotoReview) => row.album },
-    { header: "Size", cell: (row: AdminPhotoReview) => row.size },
+    { header: "Photo", cell: (row: AdminPhotoReviewRow) => row.name },
+    { header: "Album", cell: (row: AdminPhotoReviewRow) => row.album },
+    { header: "Size", cell: (row: AdminPhotoReviewRow) => row.size },
     {
       header: "Status",
-      cell: (row: AdminPhotoReview) =>
+      cell: (row: AdminPhotoReviewRow) =>
         row.state === "Awaiting admin approval" ? (
           <Badge variant="warning">{row.state}</Badge>
         ) : (
@@ -166,17 +378,13 @@ export function AdminGallery() {
     },
     {
       header: "Actions",
-      cell: (row: AdminPhotoReview) => (
+      cell: (row: AdminPhotoReviewRow) => (
         <span className="flex flex-wrap items-center gap-x-1">
-          <RowAction onClick={() => reviewPhoto(row, "Approved")}>
-            Approve
-          </RowAction>
+          <RowAction onClick={() => approve(row)}>Approve</RowAction>
           <span aria-hidden className="text-muted">
             ·
           </span>
-          <RowAction onClick={() => reviewPhoto(row, "Rejected")}>
-            Reject
-          </RowAction>
+          <RowAction onClick={() => reject(row)}>Reject</RowAction>
         </span>
       ),
     },
@@ -219,7 +427,7 @@ export function AdminGallery() {
           <Button
             type="button"
             className="h-[47px] w-[152px] shrink-0"
-            onClick={createAlbum}
+            onClick={() => void createAlbum()}
           >
             Create album
           </Button>
@@ -236,7 +444,7 @@ export function AdminGallery() {
 
             <AdminSelectField
               label="Category"
-              options={ADMIN_ALBUM_CATEGORIES}
+              options={ALBUM_CATEGORIES}
               value={category}
               onValueChange={setCategory}
               className="md:w-[344px] md:shrink-0 xl:w-[560px]"
@@ -246,10 +454,28 @@ export function AdminGallery() {
           <PortalTable
             caption="Albums"
             columns={albumColumns}
-            rows={filtered}
+            rows={albums}
             mobileRecords={albumRecords}
             mobileRecordSize="uniform"
           />
+
+          {/* The album list is empty: the panel says so instead of leaving a
+              bare table behind. */}
+          {albums.length === 0 && !loading ? (
+            <EmptyState
+              message="No albums yet"
+              title="Create an album, then add photos to it."
+            />
+          ) : null}
+
+          {/* The list is on its way: the panel holds the rhythm Figma draws
+              while the rows are loaded. */}
+          {loading ? (
+            <LoadingSkeleton
+              message="Loading the albums"
+              title="Fetching the albums…"
+            />
+          ) : null}
 
           {/* The media upload block. */}
           <section className="flex w-full flex-col items-start rounded-[12px] border border-border bg-surface p-6">
@@ -263,11 +489,30 @@ export function AdminGallery() {
               type="button"
               variant="secondary"
               className="mt-4 h-[49px] w-[166px]"
+              disabled={busy}
+              onClick={() => fileInput.current?.click()}
             >
               <Upload aria-hidden className="size-4" />
               Browse photos
             </Button>
           </section>
+
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp"
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+
+              event.target.value = "";
+
+              if (files.length === 0) return;
+
+              void uploadPhotos(files);
+            }}
+          />
         </>
       ) : (
         <>
@@ -282,6 +527,15 @@ export function AdminGallery() {
             mobileRecords={reviewRecords}
             mobileRecordSize="uniform"
           />
+
+          {/* The queue is empty: the panel says so instead of leaving a bare
+              table behind. */}
+          {reviews.length === 0 ? (
+            <EmptyState
+              message="Nothing to approve"
+              title="Photos the teachers upload will appear here."
+            />
+          ) : null}
         </>
       )}
     </div>

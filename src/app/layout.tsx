@@ -8,8 +8,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "[School Name] · Narail Collectorate School",
-    template: "%s · [School Name]",
+    default: "Narail Collectorate School · Narail Collectorate School",
+    template: "%s · Narail Collectorate School",
   },
   description:
     "Learning today. Leading tomorrow. A digital campus for students, teachers and administrators.",

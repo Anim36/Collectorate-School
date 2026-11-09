@@ -5,9 +5,12 @@ import { utilityLinks } from "@/data/navigation";
 /**
  * Utility bar above the navbar.
  * Figma "Utility bar" (2:167 / 2:177 / 2:187): navy fill, 12px vertical
- * padding, 13px medium Inter copy. Desktop and tablet show the location
- * line followed by the four utility links; mobile drops the location line
- * and collapses the portals into a single "Student · Teacher · Login" run.
+ * padding, 13px medium Inter copy. The location line stays on the left and
+ * the four utility links ("Apply Now", "Student Portal", "Teacher Portal"
+ * and "Login") are pushed to the right edge of the bar, which is a
+ * deliberate change from the Figma frame, where they follow the location
+ * line directly. Mobile drops the location line and collapses the portals
+ * into a single "Student / Teacher / Login" run.
  */
 export function TopBar() {
   return (
@@ -40,8 +43,8 @@ export function TopBar() {
           </span>
         </div>
 
-        {/* Tablet and desktop: the four utility links. */}
-        <ul className="hidden items-start gap-6 md:flex">
+        {/* Tablet and desktop: the four utility links, aligned to the right. */}
+        <ul className="ml-auto hidden items-start gap-6 md:flex">
           {utilityLinks.map((link) => (
             <li key={link.label}>
               <Link

@@ -23,6 +23,10 @@
     "qa:auth-logout": "tsx scripts/qa/check-auth-logout.ts",
     "qa:admin": "tsx scripts/qa/check-admin-api.ts",
     "qa:admin-roles": "tsx scripts/qa/check-admin-roles.ts",
+    "qa:admin-11b": "tsx scripts/qa/check-admin-11b.ts",
+    "qa:admin-11b-security": "tsx scripts/qa/check-admin-11b-security.ts",
+    "qa:admin-11b-http": "tsx scripts/qa/check-admin-11b-http.ts",
+    "qa:restore": "tsx scripts/qa/restore-seed-state.ts",
     "qa:compare-seed": "tsx scripts/qa/seed-compare-account.ts",
     "qa:compare-seed:clean": "tsx scripts/qa/seed-compare-account.ts --clean"
   },
@@ -54,6 +58,7 @@
     "react-dom": "19.1.0",
     "react-hook-form": "^7.54.2",
     "recharts": "^2.15.1",
+    "sanitize-html": "^2.17.0",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.24.2"
@@ -62,6 +67,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sanitize-html": "^2.16.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9",
     "eslint-config-next": "15.5.29",

@@ -89,3 +89,24 @@ The browser-driven checks in `scripts/qa/` need:
 
 The checks work on their own throwaway accounts and remove them afterwards,
 so the seeded demo accounts are not touched.
+
+## The audit log can still be edited and deleted
+
+Every important write of the admin screens records a row in `audit_log`
+(`src/server/services/audit.ts`). In production that table has to be
+**append-only**: no `UPDATE` and no `DELETE` may ever touch a row, so the
+record of who changed what cannot be rewritten after the fact.
+
+Today nothing enforces that. The rows are written through the Prisma client,
+which has the whole database behind it, and the QA cleanup
+(`scripts/qa/restore-seed-state.ts`, `scripts/qa/check-admin-11b*.ts`) deletes
+audit rows on purpose — that is what the checks need to be able to run again.
+
+- The rule is to be enforced in **B7**, not before it.
+- The enforcement belongs in the database, not in the application: a rule that
+  only the application follows is a rule a direct connection can step around.
+  The usual way is a rule or a trigger that refuses `UPDATE` and `DELETE` on
+  `audit_log`, plus a role that is only allowed to `INSERT` into it.
+- The QA scripts need an account that may clean up after itself, or they have
+  to be changed to run against a copy of the database, before the rule lands.
+

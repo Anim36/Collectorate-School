@@ -128,10 +128,20 @@ so they can be run again without changing the school.
 | `npm run qa:auth-logout` | The sign-out control, driven in the debug browser. |
 | `npm run qa:admin` | The admin services: the accounts, the classes, the subjects, the allocations and the CSV import. |
 | `npm run qa:admin-roles` | The admin server actions over HTTP: an admin may run them, nobody else may. |
+| `npm run qa:admin-11b` | The admin notices, gallery, routine and calendar services, the uploads and the audit trail. |
+| `npm run qa:admin-11b-security` | The upload rules, the file names and the sanitizing of the notice body. |
+| `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP: who may run them and who may see a file. |
 
 `npm run qa:auth-password` and `npm run qa:auth-logout` drive the debug
-browser, so it has to be up. `npm run qa:admin-roles` talks to the server on
-port 3111, so a build has to be running there.
+browser, so it has to be up. `npm run qa:admin-roles` and
+`npm run qa:admin-11b-http` talk to the server on port 3111, so a build has to
+be running there.
+
+The checks write to the real database, so they clean up after themselves. The
+browser check `scripts/check-admin-11b.mjs` changes rows of the school, so it
+puts them back the way the seed describes them when it is done; the same is
+true of `scripts/qa/restore-seed-state.ts`, which can be run on its own to put
+the database back after a check that was interrupted.
 
 The rest of `scripts/qa/` are the single-purpose probes: `measure-*.mjs`
 prints the geometry of a page, `inspect-*.mjs` prints the computed style of an

@@ -752,6 +752,8 @@ export async function seedNotices(
         title: notice.title,
         body: notice.body,
         category: notice.category,
+        audience: audienceFor(notice.audiences[0] ?? "Public"),
+        audiences: notice.audiences.map(audienceFor),
         status: notice.status === "Published" ? "PUBLISHED" : "DRAFT",
       },
       create: {
@@ -788,14 +790,19 @@ export async function seedNotices(
 function audienceFor(
   audience: string,
 ): "PUBLIC" | "STUDENTS" | "TEACHERS" | "GUARDIANS" {
-  switch (audience) {
+  // The mock data writes the audiences in two styles: the public board uses
+  // "everyone", "students", "guardians" and "staff", and the admin editor
+  // uses "Public", "Students" and "Teachers". Both are read here.
+  switch (audience.trim().toLowerCase()) {
     case "students":
-    case "For students":
+    case "for students":
       return "STUDENTS";
     case "staff":
-    case "For teachers":
+    case "teachers":
+    case "for teachers":
       return "TEACHERS";
     case "guardians":
+    case "for guardians":
       return "GUARDIANS";
     default:
       return "PUBLIC";
@@ -892,8 +899,15 @@ export async function seedGallery(
 /**
  * The weekly timetable of every class.
  *
- * The mock data holds the timetable of Class 9; the other classes reuse it
- * with the subjects shifted, so every class reads as its own timetable.
+ * The mock data holds the timetable of Classes 6 to 10, with Class 9 as the
+ * one the Figma frames draw. The classes the mock data does not cover get a
+ * timetable of the subjects they actually teach, so every period of every
+ * class holds a subject of that class.
+ *
+ * A teacher can only be in one class at a time, so a period only carries a
+ * teacher when that teacher is free at that time. The classes that are
+ * written first take the slots, so the class the Figma frames draw is the one
+ * that is fully staffed.
  */
 export async function seedRoutines(
   prisma: PrismaClient,
@@ -912,9 +926,11 @@ export async function seedRoutines(
     "13:45",
   ];
 
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu"] as const;
-  const classNine = SEED_DEMO_DATA.routineTimetable["Class 9"];
+  const days = 5;
+  const periods = 8;
 
+  // The routines themselves are written first, so the periods of every class
+  // can be written in one pass over the days and the periods.
   for (const seedClass of SEED_CLASSES) {
     const sectionId = sectionIds.get(seedClass.id);
     if (!sectionId) continue;
@@ -938,38 +954,73 @@ export async function seedRoutines(
         published: true,
       },
     });
+  }
 
-    const shift = seedClass.sortOrder % 8;
+  // The timetable of every class, and the order the classes take the teacher
+  // slots in.
+  const timetables = SEED_CLASSES.map((seedClass) => ({
+    seedClass,
+    subjects: periodsOfClass(seedClass, days, periods),
+  }));
 
-    for (const [dayIndex] of days.entries()) {
-      const dayPeriods = classNine[dayIndex]?.periods ?? [];
+  const priority = [...timetables].sort(
+    (first, second) =>
+      classPriority(first.seedClass.name) - classPriority(second.seedClass.name),
+  );
 
-      for (const [periodIndex] of dayPeriods.entries()) {
-        const subjectName = shiftSubjects(dayPeriods, shift)[periodIndex]?.subject;
+  // A teacher can only be in one class at a time, so the slots a teacher has
+  // already taken are remembered while the classes are written.
+  const taken = new Set<string>();
+
+  for (let dayIndex = 0; dayIndex < days; dayIndex += 1) {
+    for (let periodIndex = 0; periodIndex < periods; periodIndex += 1) {
+      for (const entry of priority) {
+        const subjectName = entry.subjects[dayIndex]?.[periodIndex];
         if (!subjectName) continue;
 
         const subjectId = subjectIds.get(subjectName);
         if (!subjectId) continue;
 
         const teacherName = SEED_DEMO_DATA.subjectTeachers[subjectName];
-        const teacherId = teacherName ? teacherIds.get(teacherName) : null;
+        const teacherId = teacherName ? teacherIds.get(teacherName) ?? null : null;
+
+        // The teacher is only written when the teacher is free at that time.
+        const slot = teacherId
+          ? `${teacherId}-${dayIndex}-${periodIndex}`
+          : "";
+
+        let freeTeacherId = teacherId;
+
+        if (teacherId && taken.has(slot)) {
+          freeTeacherId = null;
+        } else if (teacherId) {
+          taken.add(slot);
+        }
+
+        const routineId = `routine-${entry.seedClass.id}`;
 
         await prisma.routinePeriod.upsert({
           where: {
             routineId_day_period: {
-              routineId: `routine-${seedClass.id}`,
+              routineId,
               day: dayIndex,
               period: periodIndex + 1,
             },
           },
-          update: { subjectId, teacherId, startTime: periodTimes[periodIndex] },
+          update: {
+            subjectId,
+            teacherId: freeTeacherId,
+            startTime: periodTimes[periodIndex],
+            endTime: periodTimes[periodIndex + 1] ?? "14:30",
+            room: subjectName === "Science" ? "Lab 1" : null,
+          },
           create: {
-            id: `routine-period-${seedClass.id}-${dayIndex}-${periodIndex + 1}`,
-            routineId: `routine-${seedClass.id}`,
+            id: `routine-period-${entry.seedClass.id}-${dayIndex}-${periodIndex + 1}`,
+            routineId,
             day: dayIndex,
             period: periodIndex + 1,
             subjectId,
-            teacherId,
+            teacherId: freeTeacherId,
             startTime: periodTimes[periodIndex],
             endTime: periodTimes[periodIndex + 1] ?? "14:30",
             room: subjectName === "Science" ? "Lab 1" : null,
@@ -982,18 +1033,52 @@ export async function seedRoutines(
   console.log("Seed: routines written.");
 }
 
-/** Rotates the subject of every period by `offset` positions. */
-function shiftSubjects<T extends { subject: string }>(
-  periods: readonly T[],
-  offset: number,
-): T[] {
-  const allSubjects = Array.from(new Set(periods.map((period) => period.subject)));
+/**
+ * The order the classes take the teacher slots in.
+ *
+ * The class the Figma frames draw is written first, so it is the one that is
+ * fully staffed.
+ */
+function classPriority(name: string): number {
+  return name === "Class 9" ? 0 : 1;
+}
 
-  return periods.map((period) => {
-    const index = allSubjects.indexOf(period.subject);
-    const next = (index + offset) % allSubjects.length;
-    return { ...period, subject: allSubjects[next] };
-  });
+/**
+ * The timetable of one class.
+ *
+ * The classes the mock data covers keep the timetable of the mock data, with
+ * the names the database uses. The other classes cycle through the subjects
+ * they teach, so every period holds a subject of that class.
+ */
+function periodsOfClass(
+  seedClass: (typeof SEED_CLASSES)[number],
+  days: number,
+  periods: number,
+): string[][] {
+  const mock = SEED_DEMO_DATA.routineTimetable[
+    seedClass.name as keyof typeof SEED_DEMO_DATA.routineTimetable
+  ];
+
+  if (mock) {
+    return mock.map((day) => day.periods.map((period) => subjectKey(period.subject)));
+  }
+
+  const subjects = seedClass.subjects;
+
+  return Array.from({ length: days }, (_, day) =>
+    Array.from(
+      { length: periods },
+      (_, period) => subjects[(day * 2 + period) % subjects.length],
+    ),
+  );
+}
+
+/** The name a subject of the mock data carries in the database. */
+function subjectKey(name: string): string {
+  if (name === "Math") return "Mathematics";
+  if (name === "PE") return "Physical Education";
+
+  return name;
 }
 
 /* --------------------------------------------------------------- calendar --- */

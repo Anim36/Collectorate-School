@@ -1,15 +1,15 @@
 /**
- * Prints the geometry of the rows inside a rendered table.
+ * Measures the rows of a table, on desktop and on mobile.
  *
- * Usage: node scripts/qa/measure-rows.mjs <route> <width> <selector>
+ * Usage: node scripts/qa/measure-rows.mjs /admin/gallery 375
  */
-const route = process.argv[2] ?? "/notice";
-const width = Number(process.argv[3] ?? 1440);
-const height = Number(process.argv[4] ?? 1200);
-const selector = process.argv[5] ?? "table";
+
+const route = process.argv[2] ?? "/admin/gallery";
+const width = Number(process.argv[3] ?? 375);
 
 const endpoint = await (await fetch("http://localhost:9222/json")).json();
 const page = endpoint.find((t) => t.type === "page");
+
 if (!page) {
   console.log("NO PAGE TARGET");
   process.exit(1);
@@ -21,47 +21,56 @@ const pending = new Map();
 
 function send(method, params = {}) {
   return new Promise((resolve) => {
-    const msgId = ++id;
-    pending.set(msgId, resolve);
-    ws.send(JSON.stringify({ id: msgId, method, params }));
+    const messageId = ++id;
+    pending.set(messageId, resolve);
+    ws.send(JSON.stringify({ id: messageId, method, params }));
   });
 }
 
 ws.addEventListener("message", (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.id && pending.has(msg.id)) {
-    pending.get(msg.id)(msg.result);
-    pending.delete(msg.id);
+  const message = JSON.parse(event.data);
+
+  if (message.id && pending.has(message.id)) {
+    pending.get(message.id)(message.result);
+    pending.delete(message.id);
   }
 });
 
 await new Promise((resolve) => ws.addEventListener("open", resolve));
+
 await send("Page.enable");
+await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", {
   width,
-  height,
+  height: 2400,
   deviceScaleFactor: 1,
   mobile: false,
 });
+
 await send("Page.navigate", { url: `http://localhost:3111${route}` });
-await new Promise((resolve) => setTimeout(resolve, 2500));
+await new Promise((resolve) => setTimeout(resolve, 2600));
 
 const expression = `(() => {
-  const root = document.querySelector(${JSON.stringify(selector)});
-  if (!root) return null;
-  const box = (el) => {
+  const content = document.querySelector('[data-portal="content"]');
+  if (!content) return null;
+  const root = content.firstElementChild;
+
+  const out = [];
+
+  for (const el of root.querySelectorAll('tbody tr, ul li')) {
     const r = el.getBoundingClientRect();
-    return {
-      top: Math.round((r.top + window.scrollY) * 10) / 10,
-      height: Math.round(r.height * 10) / 10,
-      tag: el.tagName.toLowerCase(),
-      label: (el.textContent || "").trim().slice(0, 30),
-    };
-  };
-  const rows = Array.from(root.querySelectorAll("tr")).map(box);
-  const cells = Array.from(root.querySelectorAll("tbody tr:first-child td")).map(box);
-  const head = Array.from(root.querySelectorAll("thead tr")).map(box);
-  return { rows, cells, head };
+    if (r.height === 0) continue;
+    const lines = Array.from(el.children).map((line) => {
+      const lr = line.getBoundingClientRect();
+      return {
+        text: (line.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 50),
+        h: Math.round(lr.height),
+      };
+    });
+    out.push({ tag: el.tagName.toLowerCase(), h: Math.round(r.height), lines });
+  }
+
+  return out;
 })()`;
 
 const result = await send("Runtime.evaluate", {
@@ -69,28 +78,6 @@ const result = await send("Runtime.evaluate", {
   returnByValue: true,
 });
 
-const actual = result.result.value;
-if (!actual) {
-  console.log("NO MATCH for selector");
-  process.exit(1);
-}
-
-console.log(`=== ${route} @ ${width}px :: ${selector} ===`);
-console.log("thead:");
-for (const row of actual.head) console.log(`  ${row.tag} top ${row.top} h ${row.height}`);
-console.log("rows:");
-let prevBottom = null;
-for (const row of actual.rows) {
-  const gap = prevBottom === null ? "" : row.top - prevBottom;
-  console.log(
-    `  ${row.tag} top ${String(row.top).padStart(7)} h ${String(row.height).padStart(6)}` +
-      ` bottom ${String(row.top + row.height).padStart(7)} gapAbove=${String(gap).padStart(6)}  ${row.label}`,
-  );
-  prevBottom = row.top + row.height;
-}
-console.log("first body row cells:");
-for (const cell of actual.cells) {
-  console.log(`  ${cell.tag} top ${cell.top} h ${cell.height}  ${cell.label}`);
-}
+console.log(JSON.stringify(result?.result?.value, null, 1));
 
 ws.close();

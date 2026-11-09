@@ -13,6 +13,25 @@ import type {
   TeacherOption,
 } from "@/server/services/classes";
 import type { CsvPreview } from "@/server/services/csv-import";
+import type {
+  ListCalendarEventsInput,
+  ListNoticesInput,
+  SaveAlbumInput,
+  SaveNoticeInput,
+} from "@/server/services/admin-11b-schemas";
+import type {
+  AdminNoticeList as NoticeList,
+  AdminNoticeRow as NoticeRow,
+} from "@/types/admin-11b";
+import type {
+  AdminAlbumList as AlbumList,
+  AdminPhotoReviewRow as PhotoReviewRow,
+} from "@/types/admin-11b";
+import type {
+  AdminRoutineClassOption as RoutineClassOption,
+  AdminRoutineSheet as RoutineSheet,
+} from "@/types/admin-11b";
+import type { AdminCalendarEventList as CalendarEventList } from "@/types/admin-11b";
 
 /**
  * The admin actions.
@@ -421,6 +440,519 @@ export async function commitCsvAction(input: {
 
   if (result.ok) {
     revalidatePath("/admin/users");
+  }
+
+  return result;
+}
+
+/* ------------------------------------------------------------- notices --- */
+
+/**
+ * Reads the notices of the school.
+ */
+export async function listNoticesAction(input: {
+  query?: string;
+  category?: string;
+  audience?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<ServiceResult<NoticeList>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { listNotices } = await import("@/server/services/notices");
+
+  return listNotices({
+    query: input.query,
+    category: input.category as ListNoticesInput["category"],
+    audience: input.audience as ListNoticesInput["audience"],
+    status: input.status as ListNoticesInput["status"],
+    page: input.page,
+    pageSize: input.pageSize,
+  });
+}
+
+/**
+ * Reads one notice in full.
+ */
+export async function getNoticeAction(
+  noticeId: string,
+): Promise<ServiceResult<NoticeRow>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { getNotice } = await import("@/server/services/notices");
+
+  return getNotice(noticeId);
+}
+
+/**
+ * Creates a notice or edits an existing one.
+ */
+export async function saveNoticeAction(input: {
+  id?: string;
+  title: string;
+  body: string;
+  category: string;
+  audiences: string[];
+  publishedOn?: string;
+}): Promise<ServiceResult<{ id: string; title: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { saveNotice } = await import("@/server/services/notices");
+
+  const result = await saveNotice(admin.id, {
+    id: input.id,
+    title: input.title,
+    body: input.body,
+    category: input.category as SaveNoticeInput["category"],
+    audiences: input.audiences as SaveNoticeInput["audiences"],
+    publishedOn: input.publishedOn,
+  });
+
+  if (result.ok) {
+    revalidatePath("/admin/notices");
+  }
+
+  return result;
+}
+
+/**
+ * Publishes a notice.
+ */
+export async function publishNoticeAction(
+  noticeId: string,
+): Promise<ServiceResult<{ id: string; publishedOn: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { publishNotice } = await import("@/server/services/notices");
+
+  const result = await publishNotice(admin.id, noticeId);
+
+  if (result.ok) {
+    revalidatePath("/admin/notices");
+  }
+
+  return result;
+}
+
+/**
+ * Takes a published notice back to a draft.
+ */
+export async function unpublishNoticeAction(
+  noticeId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { unpublishNotice } = await import("@/server/services/notices");
+
+  const result = await unpublishNotice(admin.id, noticeId);
+
+  if (result.ok) {
+    revalidatePath("/admin/notices");
+  }
+
+  return result;
+}
+
+/**
+ * Removes a notice.
+ */
+export async function deleteNoticeAction(
+  noticeId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { deleteNotice } = await import("@/server/services/notices");
+
+  const result = await deleteNotice(admin.id, noticeId);
+
+  if (result.ok) {
+    revalidatePath("/admin/notices");
+  }
+
+  return result;
+}
+
+/**
+ * Attaches uploaded files to a notice.
+ */
+export async function attachFilesAction(input: {
+  noticeId: string;
+  files: { name: string; base64: string }[];
+}): Promise<ServiceResult<{ attached: number }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { attachFiles } = await import("@/server/services/notices");
+
+  const result = await attachFiles(admin.id, input);
+
+  if (result.ok) {
+    revalidatePath("/admin/notices");
+  }
+
+  return result;
+}
+
+/**
+ * Removes an attachment from a notice.
+ */
+export async function removeAttachmentAction(
+  attachmentId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { removeAttachment } = await import("@/server/services/notices");
+
+  const result = await removeAttachment(admin.id, attachmentId);
+
+  if (result.ok) {
+    revalidatePath("/admin/notices");
+  }
+
+  return result;
+}
+
+/* ------------------------------------------------------------- gallery --- */
+
+/**
+ * Reads the albums of the school.
+ */
+export async function listAlbumsAction(input: {
+  query?: string;
+  category?: string;
+}): Promise<ServiceResult<AlbumList>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { listAlbums } = await import("@/server/services/gallery");
+
+  return listAlbums(input);
+}
+
+/**
+ * Reads the photographs waiting for the admin.
+ */
+export async function listPendingPhotosAction(): Promise<
+  ServiceResult<PhotoReviewRow[]>
+> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { listPendingPhotos } = await import("@/server/services/gallery");
+
+  return listPendingPhotos();
+}
+
+/**
+ * Creates an album or renames an existing one.
+ */
+export async function saveAlbumAction(input: {
+  id?: string;
+  title: string;
+  category?: string;
+  visibility?: string;
+}): Promise<ServiceResult<{ id: string; title: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { saveAlbum } = await import("@/server/services/gallery");
+
+  const result = await saveAlbum(admin.id, {
+    id: input.id,
+    title: input.title,
+    category: input.category as SaveAlbumInput["category"],
+    visibility: (input.visibility ?? "PUBLIC") as "PUBLIC" | "TEACHERS",
+  });
+
+  if (result.ok) {
+    revalidatePath("/admin/gallery");
+  }
+
+  return result;
+}
+
+/**
+ * Removes an album that holds no photographs.
+ */
+export async function deleteAlbumAction(
+  albumId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { deleteAlbum } = await import("@/server/services/gallery");
+
+  const result = await deleteAlbum(admin.id, albumId);
+
+  if (result.ok) {
+    revalidatePath("/admin/gallery");
+  }
+
+  return result;
+}
+
+/**
+ * Approves a photograph.
+ */
+export async function approvePhotoAction(
+  photoId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { approvePhoto } = await import("@/server/services/gallery");
+
+  const result = await approvePhoto(admin.id, photoId);
+
+  if (result.ok) {
+    revalidatePath("/admin/gallery");
+  }
+
+  return result;
+}
+
+/**
+ * Sends a photograph back to the teacher who uploaded it.
+ */
+export async function rejectPhotoAction(
+  photoId: string,
+  reason?: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { rejectPhoto } = await import("@/server/services/gallery");
+
+  const result = await rejectPhoto(admin.id, photoId, reason);
+
+  if (result.ok) {
+    revalidatePath("/admin/gallery");
+  }
+
+  return result;
+}
+
+/**
+ * Removes a photograph from an album.
+ */
+export async function deletePhotoAction(
+  photoId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { deletePhoto } = await import("@/server/services/gallery");
+
+  const result = await deletePhoto(admin.id, photoId);
+
+  if (result.ok) {
+    revalidatePath("/admin/gallery");
+  }
+
+  return result;
+}
+
+/**
+ * Uploads photographs into an album.
+ *
+ * The photographs an admin uploads are approved straight away, because the
+ * admin is the one who decides what the school publishes.
+ */
+export async function uploadPhotosAction(input: {
+  albumId: string;
+  files: { name: string; base64: string }[];
+}): Promise<ServiceResult<{ uploaded: number }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { uploadPhotos } = await import("@/server/services/gallery");
+
+  const result = await uploadPhotos(admin.id, input);
+
+  if (result.ok) {
+    revalidatePath("/admin/gallery");
+  }
+
+  return result;
+}
+
+/* ------------------------------------------------------------- routine --- */
+
+/**
+ * Reads the classes the admin can pick for a routine.
+ */
+export async function listRoutineClassesAction(): Promise<
+  ServiceResult<RoutineClassOption[]>
+> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { listRoutineClasses } = await import("@/server/services/routine");
+
+  return listRoutineClasses();
+}
+
+/**
+ * Reads the timetable of a class.
+ */
+export async function getRoutineAction(
+  classId: string,
+): Promise<ServiceResult<RoutineSheet>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { getRoutine } = await import("@/server/services/routine");
+
+  return getRoutine(classId);
+}
+
+/**
+ * Saves the timetable of a class.
+ */
+export async function saveRoutineAction(input: {
+  classId: string;
+  effectiveFrom: string;
+  periods: {
+    day: number;
+    period: number;
+    subjectId?: string;
+    teacherId?: string;
+  }[];
+}): Promise<ServiceResult<{ id: string; published: boolean }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { saveRoutine } = await import("@/server/services/routine");
+
+  const result = await saveRoutine(admin.id, input);
+
+  if (result.ok) {
+    revalidatePath("/admin/routine");
+  }
+
+  return result;
+}
+
+/**
+ * Publishes the timetable of a class.
+ */
+export async function publishRoutineAction(
+  classId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { publishRoutine } = await import("@/server/services/routine");
+
+  const result = await publishRoutine(admin.id, classId);
+
+  if (result.ok) {
+    revalidatePath("/admin/routine");
+  }
+
+  return result;
+}
+
+/* ------------------------------------------------------------ calendar --- */
+
+/**
+ * Reads the entries of the calendar.
+ */
+export async function listCalendarEventsAction(input: {
+  query?: string;
+  type?: string;
+  month?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<ServiceResult<CalendarEventList>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { listCalendarEvents } = await import("@/server/services/calendar");
+
+  return listCalendarEvents({
+    query: input.query,
+    type: input.type as ListCalendarEventsInput["type"],
+    month: input.month,
+    page: input.page,
+    pageSize: input.pageSize,
+  });
+}
+
+/**
+ * Creates a calendar event or edits an existing one.
+ */
+export async function saveCalendarEventAction(input: {
+  id?: string;
+  title: string;
+  date: string;
+  endDate?: string;
+  type: string;
+  audience?: string;
+}): Promise<ServiceResult<{ id: string; title: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { saveCalendarEvent } = await import("@/server/services/calendar");
+
+  const result = await saveCalendarEvent(admin.id, {
+    ...input,
+    type: input.type as "EXAM" | "HOLIDAY" | "EVENT",
+  });
+
+  if (result.ok) {
+    revalidatePath("/admin/calendar");
+  }
+
+  return result;
+}
+
+/**
+ * Removes a calendar event.
+ */
+export async function deleteCalendarEventAction(
+  eventId: string,
+): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { deleteCalendarEvent } = await import("@/server/services/calendar");
+
+  const result = await deleteCalendarEvent(admin.id, eventId);
+
+  if (result.ok) {
+    revalidatePath("/admin/calendar");
   }
 
   return result;

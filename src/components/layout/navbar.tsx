@@ -163,13 +163,18 @@ function DesktopLink({ href, label }: { href: string; label: string }) {
  * desktop links follow the identity directly with 24px gaps and the theme
  * toggle closes the row; tablet and mobile replace the links with a
  * hamburger drawer while keeping the theme toggle.
+ *
+ * The frame draws the school name as the placeholder "[School Name]", which
+ * is twelve characters wide. The real name is twenty-five, so it is set at
+ * 17px on mobile and the identity block is widened, so the name stays on one
+ * line and the band keeps the height the frame measures.
  */
 export function Navbar() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-surface">
-      <div className="relative flex items-center gap-4 px-6 py-6 md:gap-6 md:px-8 xl:gap-6 xl:px-20">
+      <div className="relative flex items-center gap-3 px-6 py-6 md:gap-6 md:px-8 xl:gap-6 xl:px-20">
         <BookOpen
           aria-hidden
           className="size-[30px] shrink-0 text-primary md:size-10"
@@ -177,10 +182,10 @@ export function Navbar() {
 
         <Link
           href="/"
-          className="flex w-[200px] shrink-0 flex-col items-start leading-[1.45] md:w-[540px] xl:w-[260px]"
+          className="flex w-[220px] shrink-0 flex-col items-start overflow-hidden leading-[1.45] md:w-[540px] xl:w-[320px]"
         >
-          <span className="text-[20px] font-bold leading-[1.45] text-primary md:text-title">
-            [School Name]
+          <span className="max-w-full truncate text-[17px] font-bold leading-[1.45] text-primary md:text-title">
+            Narail Collectorate School
           </span>
           <span lang="bn" className="font-bengali text-caption text-muted">
             শিক্ষা • শৃঙ্খলা • মানবতা

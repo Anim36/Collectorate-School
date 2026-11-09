@@ -18,7 +18,7 @@ export default function GalleryPage() {
     <>
       <PageIntroduction
         eyebrow="HOME  /  GALLERY"
-        title="Life at [School Name]."
+        title="Life at Narail Collectorate School."
         description="Explore the experiences that make our community special."
       />
 
