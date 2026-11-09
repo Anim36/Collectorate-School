@@ -44,38 +44,66 @@ when the backend arrives.
 | `src/data/teacher.ts` | `teachers`, `classes`, `students`, `attendance` | `teacherProfile` → `teachers`; `teacherClasses` → `classes`; `teacherRolls` → `students`; `teacherAttendanceSheets` → `attendance`. |
 
 ### The tables the mock data implies
+These tables exist today. The schema is `prisma/schema.prisma`; the column
+names below are the ones the schema uses.
 
-| Table | Columns it will need |
+#### The school structure
+
+The database holds the real school, not the shape the mock data assumes.
+
+| | |
 | --- | --- |
-| `users` | `id`, `name`, `role`, `email`, `password_hash`, `class_or_department`, `status`, `created_at` |
-| `students` | `id`, `user_id`, `class_id`, `section`, `roll`, `date_of_birth`, `guardian_name`, `guardian_phone`, `email`, `address`, `emergency_contact`, `photo_url` |
-| `teachers` | `id`, `user_id`, `department`, `subject`, `photo_url` |
-| `staff` | `id`, `name`, `designation`, `department`, `photo_url` |
-| `classes` | `id`, `name`, `section`, `shift` |
-| `class_subjects` | `id`, `class_id`, `subject`, `teacher_id` |
+| Classes | Nursery, KG, Class 1 … Class 10 — twelve classes, ordered by `sort_order` (0 for Nursery, 11 for Class 10) |
+| Sections | One per class, named "Default" and flagged `is_default`. There are no A/B/C sections, no boy/girl split and no shifts. |
+| Grading | `grading_mode` is `GPA` for Class 1 to Class 10 and `GRADE_ONLY` for Nursery and KG. A `GRADE_ONLY` class publishes a letter grade and no grade point. |
+| Roll numbers | Unique inside the class, not inside the section (`unique(class_id, roll, academic_year_id)`). |
+| Fees | `fee_structure` is recorded per class, not per band, because the school runs from Nursery to Class 10 and the bands are not numeric. |
+
+The mock data only covers Classes 6 to 10 and splits them into the sections
+A, B and C. The seed merges the students of every section of a class into that
+class's one section and renumbers the rolls, so the roll of a class runs from 1
+without gaps.
+
+#### The tables
+
+| Table | Columns it holds |
+| --- | --- |
+| `users` | `id`, `login_id`, `name`, `email`, `password_hash`, `role`, `class_or_department`, `is_active`, `must_change_password`, `failed_login_count`, `locked_until`, `last_login_at`, `created_at`, `updated_at` |
+| `academic_years` | `id`, `name`, `start_date`, `end_date`, `is_current`, `created_at` |
+| `classes` | `id`, `name`, `sort_order`, `grading_mode`, `academic_year_id` |
+| `sections` | `id`, `class_id`, `name`, `is_default`, `class_teacher_id` |
 | `subjects` | `id`, `name`, `code` |
-| `attendance` | `id`, `class_id`, `section`, `date`, `student_id`, `status`, `marked_by`, `marked_at` |
-| `exam_results` | `id`, `exam_id`, `class_id`, `section`, `subject`, `student_id`, `mark`, `grade`, `gpa` |
-| `exams` | `id`, `name`, `year`, `term`, `published` |
-| `result_sheets` | `id`, `exam_id`, `class_id`, `section`, `subject`, `status`, `saved_at`, `published_at` |
-| `fees` | `id`, `student_id`, `band_id`, `label`, `amount`, `due_on`, `status` |
-| `fee_structure` | `id`, `band`, `monthly_tuition`, `admission_fee`, `activities`, `due_on` |
-| `payments` | `id`, `student_id`, `amount`, `method`, `transaction_id`, `card_last4`, `receipt_no`, `invoice_no`, `paid_on` |
-| `receipts` | `id`, `receipt_no`, `payment_id`, `student_id`, `issued_at`, `amount` |
-| `notices` | `id`, `title`, `category`, `body`, `audiences`, `status`, `published_on`, `author_id` |
-| `notice_attachments` | `id`, `notice_id`, `name`, `size`, `url` |
-| `gallery_albums` | `id`, `title`, `category`, `visibility`, `photo_count`, `cover_url` |
-| `gallery_photos` | `id`, `album_id`, `name`, `url`, `uploaded_by`, `status`, `size` |
-| `routines` | `id`, `class_id`, `section`, `effective_from`, `published` |
-| `routine_periods` | `id`, `routine_id`, `day`, `period`, `subject`, `teacher_id`, `start_time`, `end_time` |
-| `calendar_events` | `id`, `title`, `type`, `audience`, `starts_on`, `ends_on` |
-| `audit_log` | `id`, `action_type`, `actor_id`, `subject`, `at` |
+| `class_subjects` | `id`, `class_id`, `subject_id`, `teacher_id` |
+| `students` | `id`, `user_id`, `student_id`, `name`, `class_id`, `section_id`, `academic_year_id`, `roll`, `guardian_name`, `guardian_phone`, `phone`, `emergency_contact`, `email`, `address`, `photo_url`, `date_of_birth` |
+| `teachers` | `id`, `user_id`, `designation`, `department`, `subject`, `phone`, `photo_url` |
+| `staff` | `id`, `name`, `designation`, `subject`, `department`, `staff_type`, `email`, `photo_url`, `photo_width`, `photo_height`, `position` |
+| `attendance` | `id`, `student_id`, `section_id`, `date`, `status`, `marked_by_id`, `marked_at` |
+| `attendance_sheets` | `id`, `section_id`, `date`, `marked_by_id`, `saved_at` |
+| `exams` | `id`, `name`, `year`, `term`, `published`, `academic_year_id`, `created_at` |
+| `result_sheets` | `id`, `exam_id`, `class_id`, `section_id`, `subject_id`, `status`, `saved_at`, `published_at`, `entered_by_id` |
+| `exam_results` | `id`, `exam_id`, `student_id`, `subject_id`, `result_sheet_id`, `marks`, `grade`, `gpa`, `status`, `entered_by_id` |
+| `fees` | `id`, `student_id`, `fee_structure_id`, `label`, `amount_poisha`, `due_date`, `status`, `invoice_no`, `paid_at` |
+| `fee_structure` | `id`, `class_id`, `academic_year_id`, `monthly_tuition_poisha`, `admission_fee_poisha`, `activities_poisha`, `due_date` |
+| `payments` | `id`, `student_id`, `amount_poisha`, `method`, `transaction_id`, `card_last4`, `status`, `paid_at`, `recorded_by_id` |
+| `payment_items` | `id`, `payment_id`, `fee_id`, `amount_poisha` |
+| `receipts` | `id`, `receipt_no`, `payment_id`, `student_id`, `amount_poisha`, `issued_at` |
+| `notices` | `id`, `title`, `body`, `category`, `eyebrow`, `greeting`, `signature`, `audience`, `audiences`, `status`, `published_on`, `author_id` |
+| `notice_attachments` | `id`, `notice_id`, `name`, `format`, `size`, `url` |
+| `gallery_albums` | `id`, `title`, `slug`, `category`, `visibility`, `description`, `cover_url`, `photo_count`, `published_on` |
+| `gallery_photos` | `id`, `album_id`, `url`, `caption`, `name`, `size`, `width`, `height`, `status`, `uploaded_by_id`, `reviewed_by_id`, `reviewed_at` |
+| `routines` | `id`, `class_id`, `section_id`, `effective_from`, `published` |
+| `routine_periods` | `id`, `routine_id`, `day`, `period`, `subject_id`, `teacher_id`, `start_time`, `end_time`, `room` |
+| `calendar_events` | `id`, `title`, `date`, `end_date`, `type`, `audience`, `description` |
+| `audit_log` | `id`, `actor_id`, `action`, `entity_type`, `entity_id`, `metadata`, `created_at` |
 | `navigation_items` | `id`, `label`, `href`, `parent_id`, `position`, `visible` |
 | `portal_nav_items` | `id`, `role`, `label`, `href`, `icon`, `position`, `parent_id` |
-| `admission_steps` | `id`, `step`, `title`, `detail`, `position` |
+| `admission_steps` | `id`, `title`, `description`, `position` |
 | `quick_links` | `id`, `label`, `href`, `icon`, `position` |
-| `school_stats` | `id`, `label`, `value` |
+| `school_stats` | `id`, `label`, `value`, `position` |
 | `about_content` | `id`, `key`, `value` |
+
+Money is stored as an integer number of poisha (1 taka = 100 poisha), so no
+amount ever goes through a float.
 
 ---
 

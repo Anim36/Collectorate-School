@@ -1,0 +1,1170 @@
+/**
+ * The seeded records that are not the school structure.
+ *
+ * Each function writes its tables with an upsert on the unique key of the
+ * row, so the seed can be run again without duplicating anything.
+ */
+import type { PrismaClient } from "../../src/generated/prisma/client";
+import { adminNav, studentNav, teacherNav } from "@/data/portal-navigation";
+import { SEED_CLASSES } from "./classes";
+import { SEED_DEMO_DATA } from "./demo";
+import { isoDate, isoDateTime, isoDateTimeSeconds, poisha, slug, upsertInChunks } from "./helpers";
+
+/* ------------------------------------------------------------ attendance --- */
+
+/**
+ * The attendance of the demo students.
+ *
+ * The student portal shows three months of attendance and the teacher shows
+ * a saved sheet per day, so the seeded attendance covers the days both of
+ * them read.
+ */
+export async function seedAttendance(
+  prisma: PrismaClient,
+  studentIds: Map<string, string>,
+  sectionIds: Map<string, string>,
+  teacherUserIds: Map<string, string>,
+): Promise<void> {
+  const teacherId = teacherUserIds.get("Nusrat Jahan") ?? null;
+
+  // The months the student attendance calendar shows, with the days the
+  // school teaches on.
+  const months: { year: number; month: number; days: number[] }[] = [
+    { year: 2026, month: 9, days: [1, 2, 3, 6, 7, 8, 9, 10, 13, 14, 15, 16, 17, 20, 21, 22, 23, 24, 27, 28, 29, 30] },
+    { year: 2026, month: 10, days: [1, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 18, 19, 20, 21, 22, 25, 26, 27, 28, 29] },
+    { year: 2026, month: 11, days: [2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20, 23, 24, 25, 27, 30] },
+  ];
+
+  // The students of the classes the teacher takes, so the marking table has
+  // a roll to show.
+  const teacherRollClasses = ["class-9", "class-8", "class-10"];
+
+  const rows: {
+    id: string;
+    studentId: string;
+    sectionId: string;
+    date: Date;
+    status: "PRESENT" | "ABSENT" | "LATE";
+    markedById: string | null;
+  }[] = [];
+
+  for (const classId of teacherRollClasses) {
+    const sectionId = sectionIds.get(classId);
+
+    if (!sectionId) continue;
+
+    for (const month of months) {
+      for (const day of month.days) {
+        // Every twentieth school day is an absence and every thirtieth is a
+        // late arrival, so the summaries have something to report.
+        const status =
+          day % 20 === 0 ? "ABSENT" : day % 30 === 0 ? "LATE" : "PRESENT";
+
+        const date = isoDate(
+          `${month.year}-${String(month.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+        );
+
+        for (const student of SEED_DEMO_DATA.students) {
+          if (student.classId !== classId) continue;
+
+          const studentId = studentIds.get(student.id);
+          if (!studentId) continue;
+
+          rows.push({
+            id: `attendance-${studentId}-${date.toISOString().slice(0, 10)}`,
+            studentId,
+            sectionId,
+            date,
+            status,
+            markedById: teacherId,
+          });
+        }
+      }
+    }
+  }
+
+  // The rows are written in batches, so the seed does not make one round
+  // trip per attendance record.
+  await upsertInChunks(
+    prisma,
+    prisma.attendance,
+    rows,
+    (row) => ({
+      where: { studentId_date: { studentId: row.studentId, date: row.date } },
+      create: row,
+      update: {
+        status: row.status,
+        sectionId: row.sectionId,
+        markedById: row.markedById,
+      },
+    }),
+  );
+
+  // The saved sheets of the teacher, one per teaching day.
+  const sheetDays = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
+  const sheetRows: {
+    id: string;
+    sectionId: string;
+    date: Date;
+    markedById: string | null;
+    savedAt: Date;
+  }[] = [];
+
+  for (const classId of teacherRollClasses) {
+    const sectionId = sectionIds.get(classId);
+
+    if (!sectionId) continue;
+
+    for (const date of sheetDays) {
+      sheetRows.push({
+        id: `attendance-sheet-${classId}-${date}`,
+        sectionId,
+        date: isoDate(date),
+        markedById: teacherId,
+        savedAt: isoDateTime(`${date}T09:12`),
+      });
+    }
+  }
+
+  await upsertInChunks(
+    prisma,
+    prisma.attendanceSheet,
+    sheetRows,
+    (row) => ({
+      where: {
+        sectionId_date: { sectionId: row.sectionId, date: row.date },
+      },
+      create: row,
+      update: { markedById: row.markedById },
+    }),
+  );
+
+  console.log("Seed: attendance written.");
+}
+
+/* ------------------------------------------------------- exams and results --- */
+
+/** The exams the mock data shows, with the marks of every student. */
+const EXAMS = [
+  {
+    id: "exam-half-yearly-2026",
+    name: "Half-yearly examination 2026",
+    year: 2026,
+    term: "Half-yearly",
+    published: true,
+    marks: {
+      Bangla: 86,
+      English: 82,
+      Mathematics: 91,
+      Science: 88,
+      ICT: 76,
+      Religion: 81,
+      History: 78,
+      "Physical Education": 90,
+    } as Record<string, number>,
+  },
+  {
+    id: "exam-mid-term-2026",
+    name: "Mid-term examination 2026",
+    year: 2026,
+    term: "Mid-term",
+    published: true,
+    marks: {
+      Bangla: 84,
+      English: 80,
+      Mathematics: 89,
+      Science: 85,
+      ICT: 74,
+      Religion: 80,
+      History: 77,
+      "Physical Education": 88,
+    } as Record<string, number>,
+  },
+  {
+    id: "exam-annual-2025",
+    name: "Annual examination 2025",
+    year: 2025,
+    term: "Annual",
+    published: true,
+    marks: {
+      Bangla: 81,
+      English: 78,
+      Mathematics: 87,
+      Science: 83,
+      ICT: 72,
+      Religion: 79,
+      History: 75,
+      "Physical Education": 86,
+    } as Record<string, number>,
+  },
+] as const;
+
+/**
+ * The grade and the grade point of a mark.
+ *
+ * The bands mirror `gradeForMark` and `gpaForMark` in the teacher result
+ * mock data.
+ */
+function gradeForMark(mark: number): { grade: string; gpa: string } {
+  if (mark >= 80) return { grade: "A+", gpa: "5.0" };
+  if (mark >= 70) return { grade: "A", gpa: "4.5" };
+  if (mark >= 60) return { grade: "B", gpa: "4.0" };
+  if (mark >= 50) return { grade: "C", gpa: "3.5" };
+  return { grade: "D", gpa: "3.0" };
+}
+
+/**
+ * The exams, the result sheets and the marks of every student.
+ *
+ * The mock data shows the exams of the students of Classes 6 to 10; the
+ * marks come from the student result mock data, so the student portal shows
+ * the same numbers as it does today.
+ */
+export async function seedExamsAndResults(
+  prisma: PrismaClient,
+  studentIds: Map<string, string>,
+  subjectIds: Map<string, string>,
+  teacherUserIds: Map<string, string>,
+): Promise<void> {
+  for (const exam of EXAMS) {
+    await prisma.exam.upsert({
+      where: { id: exam.id },
+      update: {
+        name: exam.name,
+        year: exam.year,
+        term: exam.term,
+        published: exam.published,
+      },
+      create: {
+        id: exam.id,
+        name: exam.name,
+        year: exam.year,
+        term: exam.term,
+        published: exam.published,
+      },
+    });
+  }
+
+  // The subjects the mock result data uses, and the class they belong to.
+  const resultSubjects = [
+    "Bangla",
+    "English",
+    "Mathematics",
+    "Science",
+    "ICT",
+    "Religion",
+    "History",
+    "Physical Education",
+  ];
+
+  const sheetRows: {
+    id: string;
+    examId: string;
+    classId: string;
+    sectionId: string;
+    subjectId: string;
+    status: "PUBLISHED";
+    savedAt: Date;
+    publishedAt: Date;
+    enteredById: string | null;
+  }[] = [];
+
+  const resultRows: {
+    id: string;
+    examId: string;
+    studentId: string;
+    subjectId: string;
+    resultSheetId: string;
+    marks: number;
+    grade: string;
+    gpa: number;
+    status: "PUBLISHED";
+    enteredById: string | null;
+  }[] = [];
+
+  for (const exam of EXAMS) {
+    for (const classId of ["class-6", "class-7", "class-8", "class-9", "class-10"]) {
+      const classStudents = SEED_DEMO_DATA.students.filter(
+        (student) => student.classId === classId,
+      );
+
+      if (classStudents.length === 0) continue;
+
+      for (const subjectName of resultSubjects) {
+        const subjectId = subjectIds.get(subjectName);
+
+        if (!subjectId) continue;
+
+        const teacherName = SEED_DEMO_DATA.subjectTeachers[subjectName];
+        const teacherId = teacherName ? teacherUserIds.get(teacherName) : undefined;
+
+        // The sheet of one exam, one class and one subject.
+        const sheetId = `result-sheet-${exam.id}-${classId}-${slug(subjectName)}`;
+
+        sheetRows.push({
+          id: sheetId,
+          examId: exam.id,
+          classId,
+          sectionId: `${classId}-default`,
+          subjectId,
+          status: "PUBLISHED",
+          savedAt: isoDateTime("2026-11-02T12:10"),
+          publishedAt: isoDateTime("2026-11-02T12:10"),
+          enteredById: teacherId ?? null,
+        });
+
+        for (const student of classStudents) {
+          const studentId = studentIds.get(student.id);
+          if (!studentId) continue;
+
+          const base = exam.marks[subjectName] ?? 0;
+          // Every student of a class differs a little, so the result table
+          // does not show the same number down the column.
+          const offset = (student.roll % 7) - 3;
+          const mark = Math.max(0, Math.min(100, base + offset));
+          const { grade, gpa } = gradeForMark(mark);
+
+          resultRows.push({
+            id: `exam-result-${exam.id}-${studentId}-${subjectId}`,
+            examId: exam.id,
+            studentId,
+            subjectId,
+            resultSheetId: sheetId,
+            marks: mark,
+            grade,
+            gpa: Number(gpa),
+            status: "PUBLISHED",
+            enteredById: teacherId ?? null,
+          });
+        }
+      }
+    }
+  }
+
+  await upsertInChunks(
+    prisma,
+    prisma.resultSheet,
+    sheetRows,
+    (row) => ({
+      where: {
+        examId_sectionId_subjectId: {
+          examId: row.examId,
+          sectionId: row.sectionId,
+          subjectId: row.subjectId,
+        },
+      },
+      create: row,
+      update: {
+        status: row.status,
+        publishedAt: row.publishedAt,
+        enteredById: row.enteredById,
+      },
+    }),
+  );
+
+  await upsertInChunks(
+    prisma,
+    prisma.examResult,
+    resultRows,
+    (row) => ({
+      where: {
+        examId_studentId_subjectId: {
+          examId: row.examId,
+          studentId: row.studentId,
+          subjectId: row.subjectId,
+        },
+      },
+      create: row,
+      update: {
+        marks: row.marks,
+        grade: row.grade,
+        gpa: row.gpa,
+        status: row.status,
+      },
+    }),
+  );
+
+  console.log("Seed: exams and results written.");
+}
+
+/* ------------------------------------------------------------------ fees --- */
+
+/**
+ * The fee structure of every class, the fees of the demo students and the
+ * payments already made.
+ *
+ * The amounts of the classes the mock data covers come from the admin fee
+ * structure table; the other classes get amounts that rise with the class.
+ */
+export async function seedFees(
+  prisma: PrismaClient,
+  studentIds: Map<string, string>,
+  adminId: string,
+): Promise<void> {
+  const dueDate = isoDate("2026-11-10");
+
+  for (const seedClass of SEED_CLASSES) {
+    // The mock fee structure covers the 6–8 and 9–10 bands; those amounts
+    // are used for the classes inside the band.
+    const band =
+      seedClass.sortOrder >= 10
+        ? SEED_DEMO_DATA.adminFeeStructure.find(
+            (row) => row.classBand === "9–10",
+          )
+        : SEED_DEMO_DATA.adminFeeStructure.find(
+            (row) => row.classBand === "6–8",
+          );
+
+    const monthlyTuition = band?.monthlyTuition ?? seedClass.monthlyTuition;
+    const admissionFee = band?.admissionFee ?? seedClass.admissionFee;
+    const activities = band?.activities ?? seedClass.activities;
+
+    await prisma.feeStructure.upsert({
+      where: {
+        classId_academicYearId: {
+          classId: seedClass.id,
+          academicYearId: "academic-year-2026",
+        },
+      },
+      update: {
+        monthlyTuitionPoisha: poisha(monthlyTuition),
+        admissionFeePoisha: poisha(admissionFee),
+        activitiesPoisha: poisha(activities),
+        dueDate,
+      },
+      create: {
+        id: `fee-structure-${seedClass.id}`,
+        classId: seedClass.id,
+        academicYearId: "academic-year-2026",
+        monthlyTuitionPoisha: poisha(monthlyTuition),
+        admissionFeePoisha: poisha(admissionFee),
+        activitiesPoisha: poisha(activities),
+        dueDate,
+      },
+    });
+  }
+
+  // The fees of the demo students: the monthly tuition and the activities
+  // fee of their class, both due on 10 November 2026.
+  const structures = await prisma.feeStructure.findMany({
+    where: { academicYearId: "academic-year-2026" },
+  });
+  const structureByClass = new Map(
+    structures.map((structure) => [structure.classId, structure]),
+  );
+
+  const feeRows: {
+    id: string;
+    studentId: string;
+    feeStructureId: string;
+    label: string;
+    amountPoisha: number;
+    dueDate: Date;
+    status: "DUE";
+    invoiceNo: string;
+  }[] = [];
+
+  let invoiceCounter = 11041;
+
+  for (const student of SEED_DEMO_DATA.students) {
+    const studentId = studentIds.get(student.id);
+    if (!studentId) continue;
+
+    const structure = structureByClass.get(student.classId);
+    if (!structure) continue;
+
+    const items = [
+      { label: "November tuition", amount: structure.monthlyTuitionPoisha },
+      { label: "Annual activities", amount: structure.activitiesPoisha },
+    ];
+
+    for (const item of items) {
+      invoiceCounter += 1;
+
+      feeRows.push({
+        id: `fee-${studentId}-${slug(item.label)}`,
+        studentId,
+        feeStructureId: structure.id,
+        label: item.label,
+        amountPoisha: item.amount,
+        dueDate,
+        status: "DUE",
+        invoiceNo: `INV-2026-${invoiceCounter}`,
+      });
+    }
+  }
+
+  await upsertInChunks(
+    prisma,
+    prisma.fee,
+    feeRows,
+    (row) => ({
+      where: {
+        studentId_label_dueDate: {
+          studentId: row.studentId,
+          label: row.label,
+          dueDate: row.dueDate,
+        },
+      },
+      create: row,
+      update: { amountPoisha: row.amountPoisha, invoiceNo: row.invoiceNo },
+    }),
+  );
+
+  // The payments the admin fees table shows, converted into payments against
+  // the fees of the students they belong to.
+  const paymentsByStudent = new Map<string, (typeof SEED_DEMO_DATA.adminPayments)[number]>();
+
+  for (const payment of SEED_DEMO_DATA.adminPayments) {
+    paymentsByStudent.set(payment.student, payment);
+  }
+
+  let receiptCounter = 4471;
+
+  for (const student of SEED_DEMO_DATA.students) {
+    const payment = paymentsByStudent.get(student.name);
+    if (!payment) continue;
+
+    const studentId = studentIds.get(student.id);
+    if (!studentId) continue;
+
+    const fees = await prisma.fee.findMany({
+      where: { studentId, status: "DUE" },
+      orderBy: { label: "asc" },
+    });
+
+    if (fees.length === 0) continue;
+
+    const total = fees.reduce((sum, fee) => sum + fee.amountPoisha, 0);
+    receiptCounter += 1;
+    const receiptNo = `RCP-2026-${receiptCounter}`;
+
+    const method = methodFor(payment.method);
+
+    const record = await prisma.payment.upsert({
+      where: { transactionId: `TX-${receiptNo}` },
+      update: {
+        amountPoisha: total,
+        method,
+        status: payment.status === "Paid" ? "COMPLETED" : "PENDING",
+        paidAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : null,
+      },
+      create: {
+        id: `payment-${receiptNo}`,
+        studentId,
+        amountPoisha: total,
+        method,
+        status: payment.status === "Paid" ? "COMPLETED" : "PENDING",
+        transactionId: `TX-${receiptNo}`,
+        paidAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : null,
+        recordedById: adminId,
+      },
+    });
+
+    await prisma.receipt.upsert({
+      where: { receiptNo },
+      update: { amountPoisha: total },
+      create: {
+        id: `receipt-${receiptNo}`,
+        receiptNo,
+        paymentId: record.id,
+        studentId,
+        amountPoisha: total,
+        issuedAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : new Date(),
+      },
+    });
+
+    for (const fee of fees) {
+      await prisma.paymentItem.upsert({
+        where: { paymentId_feeId: { paymentId: record.id, feeId: fee.id } },
+        update: { amountPoisha: fee.amountPoisha },
+        create: {
+          id: `payment-item-${record.id}-${fee.id}`,
+          paymentId: record.id,
+          feeId: fee.id,
+          amountPoisha: fee.amountPoisha,
+        },
+      });
+
+      if (payment.status === "Paid") {
+        await prisma.fee.update({
+          where: { id: fee.id },
+          data: {
+            status: "PAID",
+            paidAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : null,
+          },
+        });
+      }
+    }
+  }
+
+  console.log("Seed: fee structure, fees and payments written.");
+}
+
+/** The payment method of the admin table, as the enum value. */
+function methodFor(
+  method: string,
+): "BKASH" | "NAGAD" | "CARD" | "CASH" | "BANK_TRANSFER" {
+  switch (method) {
+    case "bKash":
+      return "BKASH";
+    case "Nagad":
+      return "NAGAD";
+    case "Cash":
+      return "CASH";
+    case "Bank transfer":
+      return "BANK_TRANSFER";
+    default:
+      return "CASH";
+  }
+}
+
+/* ---------------------------------------------------------------- notices --- */
+
+/**
+ * The notices of the school.
+ *
+ * The public notice board and the admin notice editor read the same table,
+ * so both the published notices of the mock data and the admin drafts are
+ * written.
+ */
+export async function seedNotices(
+  prisma: PrismaClient,
+  adminId: string,
+): Promise<void> {
+  // The public notice board.
+  for (const notice of SEED_DEMO_DATA.notices) {
+    const id = `notice-${notice.id}`;
+
+    const record = await prisma.notice.upsert({
+      where: { id },
+      update: {
+        title: notice.title,
+        body: notice.body.join("\n\n"),
+        category: notice.category,
+        status: "PUBLISHED",
+        publishedOn: isoDate(notice.publishedOn),
+      },
+      create: {
+        id,
+        title: notice.title,
+        body: notice.body.join("\n\n"),
+        category: notice.category,
+        eyebrow: notice.eyebrow,
+        greeting: notice.greeting,
+        signature: notice.signature,
+        audience: audienceFor(notice.audience[0]),
+        audiences: notice.audience.map(audienceFor),
+        status: "PUBLISHED",
+        publishedOn: isoDate(notice.publishedOn),
+        authorId: adminId,
+      },
+    });
+
+    for (const attachment of notice.attachments) {
+      await prisma.noticeAttachment.upsert({
+        where: { id: `${id}-${slug(attachment.name)}` },
+        update: { name: attachment.name, size: attachment.size },
+        create: {
+          id: `${id}-${slug(attachment.name)}`,
+          noticeId: record.id,
+          name: attachment.name,
+          format: attachment.format,
+          size: attachment.size,
+        },
+      });
+    }
+  }
+
+  // The notices of the admin editor, which carry their own audiences.
+  for (const notice of SEED_DEMO_DATA.adminNotices) {
+    const id = `notice-${notice.id}`;
+
+    if (SEED_DEMO_DATA.notices.some((row) => row.id === notice.id)) continue;
+
+    const record = await prisma.notice.upsert({
+      where: { id },
+      update: {
+        title: notice.title,
+        body: notice.body,
+        category: notice.category,
+        status: notice.status === "Published" ? "PUBLISHED" : "DRAFT",
+      },
+      create: {
+        id,
+        title: notice.title,
+        body: notice.body,
+        category: notice.category,
+        audience: audienceFor(notice.audiences[0] ?? "Public"),
+        audiences: notice.audiences.map(audienceFor),
+        status: notice.status === "Published" ? "PUBLISHED" : "DRAFT",
+        publishedOn: isoDate(notice.publishedOn),
+        authorId: adminId,
+      },
+    });
+
+    for (const attachment of notice.attachments) {
+      await prisma.noticeAttachment.upsert({
+        where: { id: `${id}-${slug(attachment.name)}` },
+        update: { name: attachment.name, size: attachment.size },
+        create: {
+          id: `${id}-${slug(attachment.name)}`,
+          noticeId: record.id,
+          name: attachment.name,
+          size: attachment.size,
+        },
+      });
+    }
+  }
+
+  console.log("Seed: notices written.");
+}
+
+/** The main audience of a notice, as the enum value. */
+function audienceFor(
+  audience: string,
+): "PUBLIC" | "STUDENTS" | "TEACHERS" | "GUARDIANS" {
+  switch (audience) {
+    case "students":
+    case "For students":
+      return "STUDENTS";
+    case "staff":
+    case "For teachers":
+      return "TEACHERS";
+    case "guardians":
+      return "GUARDIANS";
+    default:
+      return "PUBLIC";
+  }
+}
+
+/* ---------------------------------------------------------------- gallery --- */
+
+/**
+ * The albums and the photographs of the school.
+ *
+ * The photographs the mock data already ships with are written as approved
+ * photos; the teacher uploads are written as pending, so the admin approval
+ * queue has something to show.
+ */
+export async function seedGallery(
+  prisma: PrismaClient,
+  teacherUserIds: Map<string, string>,
+): Promise<void> {
+  const uploaderId = teacherUserIds.get("Nusrat Jahan") ?? null;
+
+  for (const album of SEED_DEMO_DATA.galleryAlbums) {
+    await prisma.galleryAlbum.upsert({
+      where: { slug: album.id },
+      update: {
+        title: album.title,
+        category: album.category,
+        description: album.description,
+        photoCount: album.photoCount,
+      },
+      create: {
+        id: `album-${album.id}`,
+        title: album.title,
+        slug: album.id,
+        category: album.category,
+        visibility: "PUBLIC",
+        description: album.description,
+        coverUrl: album.photos[0]?.src ?? null,
+        photoCount: album.photoCount,
+        publishedOn: isoDate("2026-11-12"),
+      },
+    });
+
+    for (const [index, photo] of album.photos.entries()) {
+      await prisma.galleryPhoto.upsert({
+        where: { id: `photo-${album.id}-${index + 1}` },
+        update: { url: photo.src, caption: photo.alt },
+        create: {
+          id: `photo-${album.id}-${index + 1}`,
+          albumId: `album-${album.id}`,
+          url: photo.src,
+          caption: photo.alt,
+          name: `${album.id}-${index + 1}.jpg`,
+          size: "1.8 MB",
+          width: photo.width,
+          height: photo.height,
+          status: "APPROVED",
+          uploadedById: uploaderId,
+        },
+      });
+    }
+  }
+
+  // The two uploads the teacher gallery stages, waiting for the admin.
+  const pendingUploads = [
+    { name: "science-fair-01.jpg", url: "/images/science-fair.jpg", size: "2.4 MB" },
+    { name: "science-fair-02.jpg", url: "/images/campus.jpg", size: "1.8 MB" },
+  ];
+
+  for (const [index, upload] of pendingUploads.entries()) {
+    await prisma.galleryPhoto.upsert({
+      where: { id: `photo-upload-${index + 1}` },
+      update: { name: upload.name, url: upload.url },
+      create: {
+        id: `photo-upload-${index + 1}`,
+        albumId: "album-science-fair-2026",
+        url: upload.url,
+        caption: "Teacher upload waiting for approval",
+        name: upload.name,
+        size: upload.size,
+        width: 1024,
+        height: 1024,
+        status: "PENDING",
+        uploadedById: uploaderId,
+      },
+    });
+  }
+
+  console.log("Seed: gallery albums and photos written.");
+}
+
+/* --------------------------------------------------------------- routines --- */
+
+/**
+ * The weekly timetable of every class.
+ *
+ * The mock data holds the timetable of Class 9; the other classes reuse it
+ * with the subjects shifted, so every class reads as its own timetable.
+ */
+export async function seedRoutines(
+  prisma: PrismaClient,
+  sectionIds: Map<string, string>,
+  subjectIds: Map<string, string>,
+  teacherIds: Map<string, string>,
+): Promise<void> {
+  const periodTimes = [
+    "08:00",
+    "08:45",
+    "09:30",
+    "10:15",
+    "11:30",
+    "12:15",
+    "13:00",
+    "13:45",
+  ];
+
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu"] as const;
+  const classNine = SEED_DEMO_DATA.routineTimetable["Class 9"];
+
+  for (const seedClass of SEED_CLASSES) {
+    const sectionId = sectionIds.get(seedClass.id);
+    if (!sectionId) continue;
+
+    const effectiveFrom = isoDate("2026-11-01");
+
+    await prisma.routine.upsert({
+      where: {
+        classId_sectionId_effectiveFrom: {
+          classId: seedClass.id,
+          sectionId,
+          effectiveFrom,
+        },
+      },
+      update: { published: true },
+      create: {
+        id: `routine-${seedClass.id}`,
+        classId: seedClass.id,
+        sectionId,
+        effectiveFrom,
+        published: true,
+      },
+    });
+
+    const shift = seedClass.sortOrder % 8;
+
+    for (const [dayIndex] of days.entries()) {
+      const dayPeriods = classNine[dayIndex]?.periods ?? [];
+
+      for (const [periodIndex] of dayPeriods.entries()) {
+        const subjectName = shiftSubjects(dayPeriods, shift)[periodIndex]?.subject;
+        if (!subjectName) continue;
+
+        const subjectId = subjectIds.get(subjectName);
+        if (!subjectId) continue;
+
+        const teacherName = SEED_DEMO_DATA.subjectTeachers[subjectName];
+        const teacherId = teacherName ? teacherIds.get(teacherName) : null;
+
+        await prisma.routinePeriod.upsert({
+          where: {
+            routineId_day_period: {
+              routineId: `routine-${seedClass.id}`,
+              day: dayIndex,
+              period: periodIndex + 1,
+            },
+          },
+          update: { subjectId, teacherId, startTime: periodTimes[periodIndex] },
+          create: {
+            id: `routine-period-${seedClass.id}-${dayIndex}-${periodIndex + 1}`,
+            routineId: `routine-${seedClass.id}`,
+            day: dayIndex,
+            period: periodIndex + 1,
+            subjectId,
+            teacherId,
+            startTime: periodTimes[periodIndex],
+            endTime: periodTimes[periodIndex + 1] ?? "14:30",
+            room: subjectName === "Science" ? "Lab 1" : null,
+          },
+        });
+      }
+    }
+  }
+
+  console.log("Seed: routines written.");
+}
+
+/** Rotates the subject of every period by `offset` positions. */
+function shiftSubjects<T extends { subject: string }>(
+  periods: readonly T[],
+  offset: number,
+): T[] {
+  const allSubjects = Array.from(new Set(periods.map((period) => period.subject)));
+
+  return periods.map((period) => {
+    const index = allSubjects.indexOf(period.subject);
+    const next = (index + offset) % allSubjects.length;
+    return { ...period, subject: allSubjects[next] };
+  });
+}
+
+/* --------------------------------------------------------------- calendar --- */
+
+/** The entries of the academic calendar. */
+export async function seedCalendar(prisma: PrismaClient): Promise<void> {
+  const adminRows = SEED_DEMO_DATA.adminCalendarRows;
+
+  for (const row of adminRows) {
+    await prisma.calendarEvent.upsert({
+      where: { id: `calendar-${row.id}` },
+      update: { title: row.title, type: eventTypeFor(row.type), date: isoDate(row.date) },
+      create: {
+        id: `calendar-${row.id}`,
+        title: row.title,
+        date: isoDate(row.date),
+        type: eventTypeFor(row.type),
+        audience: row.audience,
+      },
+    });
+  }
+
+  // The public calendar carries more entries than the admin table.
+  for (const event of SEED_DEMO_DATA.calendarEvents) {
+    const id = `calendar-public-${event.year}-${event.month}-${event.day}`;
+
+    await prisma.calendarEvent.upsert({
+      where: { id },
+      update: { title: event.label, date: isoDate(dateOf(event)) },
+      create: {
+        id,
+        title: event.label,
+        date: isoDate(dateOf(event)),
+        type: kindFor(event.kind),
+        audience: "Everyone",
+      },
+    });
+  }
+
+  console.log("Seed: calendar events written.");
+}
+
+/** The date of a public calendar event. */
+function dateOf(event: { year: number; month: number; day: number }): string {
+  return `${event.year}-${String(event.month).padStart(2, "0")}-${String(event.day).padStart(2, "0")}`;
+}
+
+/** The type of an admin calendar row, as the enum value. */
+function eventTypeFor(type: string): "EXAM" | "HOLIDAY" | "EVENT" {
+  if (type === "Exam") return "EXAM";
+  if (type === "Holiday") return "HOLIDAY";
+  return "EVENT";
+}
+
+/** The type of a public calendar event, as the enum value. */
+function kindFor(kind: string): "EXAM" | "HOLIDAY" | "EVENT" {
+  if (kind === "Exam") return "EXAM";
+  if (kind === "Holiday") return "HOLIDAY";
+  return "EVENT";
+}
+
+/* -------------------------------------------------------------- audit log --- */
+
+/** The audit log of the school. */
+export async function seedAuditLog(
+  prisma: PrismaClient,
+  adminId: string,
+): Promise<void> {
+  for (const event of SEED_DEMO_DATA.adminAuditEvents) {
+    await prisma.auditLog.upsert({
+      where: { id: `audit-${event.id}` },
+      update: { action: event.action, entityType: event.type },
+      create: {
+        id: `audit-${event.id}`,
+        actorId: adminId,
+        action: event.action,
+        entityType: event.type,
+        entityId: event.record,
+        metadata: { time: event.time, user: event.user },
+        createdAt: isoDateTimeSeconds(`2026-11-04T10:42:00`),
+      },
+    });
+  }
+
+  console.log("Seed: audit log written.");
+}
+
+/* ----------------------------------------------------------- site content --- */
+
+/**
+ * The copy of the public site: the admission steps, the quick links, the
+ * school figures, the about page and the navigation.
+ */
+export async function seedSiteContent(prisma: PrismaClient): Promise<void> {
+  for (const [index, step] of SEED_DEMO_DATA.admissionSteps.entries()) {
+    await prisma.admissionStep.upsert({
+      where: { id: `admission-step-${index + 1}` },
+      update: { title: step.title, description: step.description },
+      create: {
+        id: `admission-step-${index + 1}`,
+        title: step.title,
+        description: step.description,
+        position: index,
+      },
+    });
+  }
+
+  for (const [index, link] of SEED_DEMO_DATA.quickLinks.entries()) {
+    await prisma.quickLink.upsert({
+      where: { id: `quick-link-${index + 1}` },
+      update: { label: link.label, href: link.href },
+      create: {
+        id: `quick-link-${index + 1}`,
+        label: link.label,
+        href: link.href,
+        icon: link.icon.displayName ?? link.icon.name ?? null,
+        position: index,
+      },
+    });
+  }
+
+  for (const [index, stat] of SEED_DEMO_DATA.schoolStats.entries()) {
+    await prisma.schoolStat.upsert({
+      where: { id: `school-stat-${index + 1}` },
+      update: { label: stat.label, value: stat.value },
+      create: {
+        id: `school-stat-${index + 1}`,
+        label: stat.label,
+        value: stat.value,
+        position: index,
+      },
+    });
+  }
+
+  // The sidebar and the bottom tab bar of each portal.
+  const portalNavs = [
+    { role: "STUDENT" as const, config: studentNav },
+    { role: "TEACHER" as const, config: teacherNav },
+    { role: "ADMIN" as const, config: adminNav },
+  ];
+
+  for (const { role, config } of portalNavs) {
+    for (const [index, item] of config.items.entries()) {
+      await prisma.portalNavItem.upsert({
+        where: { id: `portal-nav-${role.toLowerCase()}-${index + 1}` },
+        update: { label: item.label, href: item.href, icon: item.icon },
+        create: {
+          id: `portal-nav-${role.toLowerCase()}-${index + 1}`,
+          role,
+          label: item.label,
+          href: item.href,
+          icon: item.icon,
+          kind: item.kind ?? "link",
+          position: index,
+        },
+      });
+    }
+
+    for (const [index, item] of config.bottomItems.entries()) {
+      await prisma.portalNavItem.upsert({
+        where: { id: `portal-nav-${role.toLowerCase()}-bottom-${index + 1}` },
+        update: { label: item.label, href: item.href, icon: item.icon },
+        create: {
+          id: `portal-nav-${role.toLowerCase()}-bottom-${index + 1}`,
+          role,
+          label: item.label,
+          href: item.href,
+          icon: item.icon,
+          kind: item.kind ?? "link",
+          position: index,
+        },
+      });
+    }
+
+    for (const [index, item] of config.moreItems.entries()) {
+      await prisma.portalNavItem.upsert({
+        where: { id: `portal-nav-${role.toLowerCase()}-more-${index + 1}` },
+        update: { label: item.label, href: item.href, icon: item.icon },
+        create: {
+          id: `portal-nav-${role.toLowerCase()}-more-${index + 1}`,
+          role,
+          label: item.label,
+          href: item.href,
+          icon: item.icon,
+          kind: item.kind ?? "link",
+          position: index,
+        },
+      });
+    }
+  }
+
+  // The navbar: a dropdown is a parent with children.
+  for (const [index, item] of SEED_DEMO_DATA.navItems.entries()) {
+    if (item.kind === "dropdown") {
+      await prisma.navigationItem.upsert({
+        where: { id: `nav-${index + 1}` },
+        update: { label: item.label },
+        create: {
+          id: `nav-${index + 1}`,
+          label: item.label,
+          position: index,
+          visible: true,
+        },
+      });
+
+      for (const [childIndex, child] of item.items.entries()) {
+        await prisma.navigationItem.upsert({
+          where: { id: `nav-${index + 1}-${childIndex + 1}` },
+          update: { label: child.label, href: child.href },
+          create: {
+            id: `nav-${index + 1}-${childIndex + 1}`,
+            label: child.label,
+            href: child.href,
+            parentId: `nav-${index + 1}`,
+            position: childIndex,
+            visible: true,
+          },
+        });
+      }
+
+      continue;
+    }
+
+    await prisma.navigationItem.upsert({
+      where: { id: `nav-${index + 1}` },
+      update: { label: item.label, href: item.href },
+      create: {
+        id: `nav-${index + 1}`,
+        label: item.label,
+        href: item.href,
+        position: index,
+        visible: true,
+      },
+    });
+  }
+
+  console.log("Seed: site content written.");
+}

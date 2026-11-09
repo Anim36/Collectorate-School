@@ -1,0 +1,909 @@
+// Narail Collectorate School — database schema.
+//
+// Every table here backs an entity the UI already renders: the mock files in
+// `src/data` are converted into rows of these tables (see
+// `docs/BACKEND_HANDOFF.md` for the file-by-file mapping).
+//
+// Conventions
+//   * Table and column names are snake_case through `@@map` / `@map`, and they
+//     match the resource names the REST API in the handoff uses
+//     (`/api/result_sheets`, `/api/gallery_photos`, `/api/audit_log`, ...).
+//   * Identifiers are strings so a seed can pin readable ids ("class-9").
+//   * Money is stored as an integer number of poisha (1 taka = 100 poisha).
+//   * Nothing that belongs to a student or a teacher is ever cascade-deleted;
+//     accounts are deactivated with `User.isActive` instead.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/**
+ * ------------------------------------------------------------------ enums ---
+ */
+
+/// The role an account holds. It decides which portal the shell shows.
+enum UserRole {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+/// The directory a staff member appears under in the public directory.
+enum StaffType {
+  TEACHER
+  OFFICER
+  SUPPORT
+}
+
+/// How a student was marked on a sheet.
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+}
+
+/// Whether a result sheet is still a draft or has been published.
+enum ResultStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// Where a student fee sits.
+enum FeeStatus {
+  DUE
+  PAID
+  OVERDUE
+}
+
+/// How a payment was made. Card data is never stored beyond `cardLast4`.
+enum PaymentMethod {
+  BKASH
+  NAGAD
+  CARD
+  CASH
+  BANK_TRANSFER
+}
+
+/// The state of a payment.
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+/// Who a notice is addressed to.
+enum NoticeAudience {
+  PUBLIC
+  STUDENTS
+  TEACHERS
+  GUARDIANS
+}
+
+/// The publication state of a notice.
+enum NoticeStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// Who may see a gallery album.
+enum GalleryVisibility {
+  PUBLIC
+  TEACHERS
+}
+
+/// Where a gallery photograph sits in the approval flow.
+enum GalleryPhotoStatus {
+  /// Staged by a teacher, waiting for the admin.
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// The kind of a calendar entry.
+enum CalendarEventType {
+  EXAM
+  HOLIDAY
+  EVENT
+}
+
+/// How the marks of a class are reported.
+///
+/// `GPA` classes publish a grade point alongside the mark. `GRADE_ONLY`
+/// classes publish a letter grade only, so no grade point is computed.
+enum GradingMode {
+  GPA
+  GRADE_ONLY
+}
+
+/**
+ * ------------------------------------------------------------------- auth ---
+ */
+
+/// A school account. Accounts are created by an admin only; there is no signup.
+model User {
+  id                 String    @id @default(cuid())
+  /// The sign-in handle: the student id for a student, the email or staff id otherwise.
+  loginId            String    @unique @map("login_id")
+  /// The name the account is shown under.
+  name               String
+  /// Optional contact address. Unique when present.
+  email              String?   @unique
+  /// bcryptjs hash. Never leaves the server.
+  passwordHash       String    @map("password_hash")
+  role               UserRole
+  /// The class and section of a student, the teaching department of a teacher.
+  /// Free text, so the users table can show it without a join.
+  classOrDepartment  String?   @map("class_or_department")
+  /// A deactivated account keeps every record it owns.
+  isActive           Boolean   @default(true) @map("is_active")
+  /// Set on every newly created account; cleared once the password is changed.
+  mustChangePassword Boolean   @default(true) @map("must_change_password")
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until")
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  student          Student?
+  teacher          Teacher?
+  notices          Notice[]
+  auditLogs        AuditLog[]
+  attendanceMarked Attendance[]      @relation("AttendanceMarker")
+  sheetsMarked     AttendanceSheet[] @relation("SheetMarker")
+  resultsEntered   ExamResult[]
+  sheetsEntered    ResultSheet[]
+  paymentsRecorded Payment[]
+  imagesUploaded   GalleryPhoto[]    @relation("GalleryUploader")
+  imagesReviewed   GalleryPhoto[]    @relation("GalleryReviewer")
+
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+/**
+ * ---------------------------------------------------------------- academic ---
+ */
+
+/// The academic year a roll, an exam or a fee belongs to.
+model AcademicYear {
+  id        String   @id @default(cuid())
+  /// The year the session runs, e.g. "2026".
+  name      String   @unique
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  isCurrent Boolean  @default(false) @map("is_current")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  students      Student[]
+  classes       Class[]
+  exams         Exam[]
+  feeStructures FeeStructure[]
+
+  @@map("academic_years")
+}
+
+/// A class of the school, e.g. "Class 9" or "Nursery".
+model Class {
+  id             String      @id @default(cuid())
+  /// The name shown everywhere, e.g. "Nursery", "KG", "Class 1".
+  name           String      @unique
+  /// The position of the class in the school, 0 for Nursery through 11 for
+  /// Class 10. Classes are always ordered by this column.
+  sortOrder      Int         @default(0) @map("sort_order")
+  /// Whether the class is graded on a grade point or on a letter grade only.
+  gradingMode    GradingMode @default(GPA) @map("grading_mode")
+  academicYearId String?     @map("academic_year_id")
+
+  sections      Section[]
+  subjects      ClassSubject[]
+  students      Student[]
+  routines      Routine[]
+  resultSheets  ResultSheet[]
+  feeStructures FeeStructure[]
+  academicYear  AcademicYear?  @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@index([sortOrder])
+  @@index([academicYearId])
+  @@map("classes")
+}
+
+/// A group of students inside a class.
+///
+/// The school runs one group per class, so every class carries a single
+/// section named "Default" with `isDefault` set. The table stays because
+/// attendance, routines and the class teacher are all recorded against a
+/// section.
+model Section {
+  id             String  @id @default(cuid())
+  classId        String  @map("class_id")
+  /// The name of the group, e.g. "Default".
+  name           String
+  /// Marks the one section every student of the class belongs to.
+  isDefault      Boolean @default(false) @map("is_default")
+  /// The teacher in charge of the section.
+  classTeacherId String? @map("class_teacher_id")
+
+  class            Class             @relation(fields: [classId], references: [id], onDelete: Restrict)
+  classTeacher     Teacher?          @relation("SectionClassTeacher", fields: [classTeacherId], references: [id], onDelete: SetNull)
+  students         Student[]
+  attendance       Attendance[]
+  attendanceSheets AttendanceSheet[]
+  routines         Routine[]
+  resultSheets     ResultSheet[]
+
+  @@unique([classId, name])
+  @@index([classId])
+  @@index([classTeacherId])
+  @@map("sections")
+}
+
+/// A subject taught in the school.
+model Subject {
+  id   String  @id @default(cuid())
+  name String  @unique
+  code String? @unique
+
+  classSubjects  ClassSubject[]
+  results        ExamResult[]
+  routinePeriods RoutinePeriod[]
+  resultSheets   ResultSheet[]
+
+  @@map("subjects")
+}
+
+/// The allocation of a subject to a class, and the teacher who takes it.
+model ClassSubject {
+  id        String  @id @default(cuid())
+  classId   String  @map("class_id")
+  subjectId String  @map("subject_id")
+  teacherId String? @map("teacher_id")
+
+  class   Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  subject Subject  @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([classId, subjectId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@map("class_subjects")
+}
+
+/**
+ * --------------------------------------------------------------- profiles ---
+ */
+
+/// A student of the school.
+model Student {
+  id               String    @id @default(cuid())
+  userId           String    @unique @map("user_id")
+  /// The institution-assigned identifier, e.g. "ST-2026-0042".
+  studentId        String    @unique @map("student_id")
+  /// The name the student is shown under.
+  name             String
+  classId          String    @map("class_id")
+  sectionId        String    @map("section_id")
+  academicYearId   String    @map("academic_year_id")
+  /// The roll number inside the section.
+  roll             Int
+  guardianName     String?   @map("guardian_name")
+  guardianPhone    String?   @map("guardian_phone")
+  phone            String?
+  /// A second contact, used when the guardian cannot be reached.
+  emergencyContact String?   @map("emergency_contact")
+  email            String?
+  address          String?
+  photoUrl         String?   @map("photo_url")
+  dateOfBirth      DateTime? @map("date_of_birth")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  attendance Attendance[]
+  results    ExamResult[]
+  fees       Fee[]
+  payments   Payment[]
+  receipts   Receipt[]
+
+  /// The roll number is unique inside the class, not inside the section: the
+  /// school runs one group per class.
+  @@unique([classId, roll, academicYearId])
+  @@index([classId])
+  @@index([sectionId])
+  @@index([academicYearId])
+  @@map("students")
+}
+
+/// A member of the teaching staff, with the account they sign in with.
+model Teacher {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+  /// The line shown in the staff directory, e.g. "Teacher · Mathematics".
+  designation String?
+  /// The department the teacher belongs to, e.g. "Science department".
+  department  String?
+  /// The main subject the teacher teaches.
+  subject     String?
+  phone       String?
+  photoUrl    String?  @map("photo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  classSubjects  ClassSubject[]
+  sectionsTaught Section[]       @relation("SectionClassTeacher")
+  routinePeriods RoutinePeriod[]
+
+  @@map("teachers")
+}
+
+/// A member of the public staff directory: the teachers, the officers and the
+/// support staff the "Teachers & Staff" page lists.
+model Staff {
+  id          String    @id @default(cuid())
+  name        String
+  /// The line shown under the name, e.g. "Senior Teacher · Science".
+  designation String
+  /// The subject the directory filter groups the member by.
+  subject     String?
+  department  String?
+  /// The directory the member appears under.
+  staffType   StaffType @default(TEACHER) @map("staff_type")
+  email       String?
+  photoUrl    String?   @map("photo_url")
+  /// The intrinsic size of the portrait, so the page reserves the space.
+  photoWidth  Int?      @map("photo_width")
+  photoHeight Int?      @map("photo_height")
+  position    Int       @default(0)
+
+  @@index([staffType])
+  @@index([subject])
+  @@map("staff")
+}
+
+/**
+ * -------------------------------------------------------------- attendance ---
+ */
+
+/// One day's attendance for one student.
+model Attendance {
+  id         String           @id @default(cuid())
+  studentId  String           @map("student_id")
+  sectionId  String           @map("section_id")
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  markedById String?          @map("marked_by_id")
+  markedAt   DateTime         @default(now()) @map("marked_at")
+
+  student  Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  section  Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  markedBy User?   @relation("AttendanceMarker", fields: [markedById], references: [id], onDelete: SetNull)
+
+  @@unique([studentId, date])
+  @@index([sectionId, date])
+  @@index([date])
+  @@index([markedById])
+  @@map("attendance")
+}
+
+/// The saved sheet of one section on one day, used for the history list.
+model AttendanceSheet {
+  id         String   @id @default(cuid())
+  sectionId  String   @map("section_id")
+  date       DateTime @db.Date
+  markedById String?  @map("marked_by_id")
+  savedAt    DateTime @default(now()) @map("saved_at")
+
+  section  Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  markedBy User?   @relation("SheetMarker", fields: [markedById], references: [id], onDelete: SetNull)
+
+  @@unique([sectionId, date])
+  @@index([date])
+  @@index([markedById])
+  @@map("attendance_sheets")
+}
+
+/**
+ * ------------------------------------------------------------------ exams ---
+ */
+
+/// An examination a teacher can enter marks for.
+model Exam {
+  id             String   @id @default(cuid())
+  name           String
+  year           Int
+  term           String?
+  published      Boolean  @default(false)
+  academicYearId String?  @map("academic_year_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  results      ExamResult[]
+  resultSheets ResultSheet[]
+
+  @@index([published])
+  @@index([academicYearId])
+  @@map("exams")
+}
+
+/// The sheet a teacher fills in: one exam, one section, one subject.
+model ResultSheet {
+  id          String       @id @default(cuid())
+  examId      String       @map("exam_id")
+  classId     String       @map("class_id")
+  sectionId   String       @map("section_id")
+  subjectId   String       @map("subject_id")
+  status      ResultStatus @default(DRAFT)
+  savedAt     DateTime     @default(now()) @map("saved_at")
+  publishedAt DateTime?    @map("published_at")
+  enteredById String?      @map("entered_by_id")
+
+  exam      Exam         @relation(fields: [examId], references: [id], onDelete: Restrict)
+  class     Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section   Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  subject   Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  enteredBy User?        @relation(fields: [enteredById], references: [id], onDelete: SetNull)
+  results   ExamResult[]
+
+  @@unique([examId, sectionId, subjectId])
+  @@index([classId])
+  @@index([sectionId])
+  @@index([subjectId])
+  @@index([status])
+  @@index([enteredById])
+  @@map("result_sheets")
+}
+
+/// The mark of one student in one subject of one exam.
+model ExamResult {
+  id            String       @id @default(cuid())
+  examId        String       @map("exam_id")
+  studentId     String       @map("student_id")
+  subjectId     String       @map("subject_id")
+  /// The sheet the mark was entered on.
+  resultSheetId String?      @map("result_sheet_id")
+  /// The mark out of 100.
+  marks         Int?
+  /// The letter grade, e.g. "A+".
+  grade         String?
+  /// The grade point, 5.00 down to 3.00.
+  gpa           Decimal?     @db.Decimal(3, 2)
+  status        ResultStatus @default(DRAFT)
+  enteredById   String?      @map("entered_by_id")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  exam        Exam         @relation(fields: [examId], references: [id], onDelete: Restrict)
+  student     Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  subject     Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  resultSheet ResultSheet? @relation(fields: [resultSheetId], references: [id], onDelete: SetNull)
+  enteredBy   User?        @relation(fields: [enteredById], references: [id], onDelete: SetNull)
+
+  @@unique([examId, studentId, subjectId])
+  @@index([studentId])
+  @@index([subjectId])
+  @@index([status])
+  @@index([resultSheetId])
+  @@index([enteredById])
+  @@map("exam_results")
+}
+
+/**
+ * ------------------------------------------------------------------- fees ---
+ */
+
+/// The fees one class is charged.
+///
+/// The structure is recorded per class rather than per band, because the
+/// school runs from Nursery to Class 10 and the bands are not numeric.
+model FeeStructure {
+  id                   String   @id @default(cuid())
+  /// The class the fee belongs to.
+  classId              String   @map("class_id")
+  academicYearId       String?  @map("academic_year_id")
+  /// The monthly tuition of the class, in poisha.
+  monthlyTuitionPoisha Int      @map("monthly_tuition_poisha")
+  /// The admission fee of the class, in poisha.
+  admissionFeePoisha   Int      @map("admission_fee_poisha")
+  /// The activities fee of the class, in poisha.
+  activitiesPoisha     Int      @map("activities_poisha")
+  /// The date the fees fall due.
+  dueDate              DateTime @map("due_date") @db.Date
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  class        Class         @relation(fields: [classId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  fees         Fee[]
+
+  @@unique([classId, academicYearId])
+  @@index([classId])
+  @@index([academicYearId])
+  @@map("fee_structure")
+}
+
+/// A fee owed by one student.
+model Fee {
+  id             String    @id @default(cuid())
+  studentId      String    @map("student_id")
+  /// The fee structure the fee comes from.
+  feeStructureId String    @map("fee_structure_id")
+  /// The label shown in the fees table, e.g. "November tuition".
+  label          String
+  /// The amount in poisha.
+  amountPoisha   Int       @map("amount_poisha")
+  dueDate        DateTime  @map("due_date") @db.Date
+  status         FeeStatus @default(DUE)
+  /// The invoice the fee is billed under, e.g. "INV-2026-11042".
+  invoiceNo      String?   @unique @map("invoice_no")
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  feeStructure FeeStructure  @relation(fields: [feeStructureId], references: [id], onDelete: Restrict)
+  payments     PaymentItem[]
+
+  /// One label per student per due date, so the seed can upsert a fee line.
+  @@unique([studentId, label, dueDate])
+  @@index([studentId, status])
+  @@index([feeStructureId])
+  @@map("fees")
+}
+
+/// A recorded payment. Card data is never stored beyond the last four digits.
+model Payment {
+  id            String        @id @default(cuid())
+  studentId     String        @map("student_id")
+  /// The amount in poisha.
+  amountPoisha  Int           @map("amount_poisha")
+  method        PaymentMethod
+  /// The identifier the sender quoted. Unique, so a payment is never recorded twice.
+  transactionId String?       @unique @map("transaction_id")
+  /// The last four digits of a card. Never the full number.
+  cardLast4     String?       @map("card_last4")
+  status        PaymentStatus @default(COMPLETED)
+  paidAt        DateTime?     @map("paid_at")
+  recordedById  String?       @map("recorded_by_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  student    Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy User?         @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+  items      PaymentItem[]
+  receipt    Receipt?
+
+  @@index([studentId, paidAt])
+  @@index([method])
+  @@index([status])
+  @@index([recordedById])
+  @@map("payments")
+}
+
+/// The fee items a payment settles.
+model PaymentItem {
+  id           String @id @default(cuid())
+  paymentId    String @map("payment_id")
+  feeId        String @map("fee_id")
+  /// The amount in poisha that this item contributes.
+  amountPoisha Int    @map("amount_poisha")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  fee     Fee     @relation(fields: [feeId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, feeId])
+  @@index([feeId])
+  @@map("payment_items")
+}
+
+/// The receipt a payment produced, e.g. "RCPT-2026-1042".
+model Receipt {
+  id           String   @id @default(cuid())
+  receiptNo    String   @unique @map("receipt_no")
+  paymentId    String   @unique @map("payment_id")
+  studentId    String   @map("student_id")
+  /// The amount in poisha the receipt settles.
+  amountPoisha Int      @map("amount_poisha")
+  issuedAt     DateTime @default(now()) @map("issued_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([studentId, issuedAt])
+  @@map("receipts")
+}
+
+/**
+ * ---------------------------------------------------------------- notices ---
+ */
+
+/// A notice published to the school.
+model Notice {
+  id          String           @id @default(cuid())
+  title       String
+  body        String
+  category    String
+  /// The small label above the title, e.g. "ANNUAL EXAMINATION / 2026".
+  eyebrow     String?
+  /// The salutation the notice opens with.
+  greeting    String?
+  /// The closing block of the notice.
+  signature   String?
+  /// The main audience of the notice.
+  audience    NoticeAudience   @default(PUBLIC)
+  /// Any further audiences the notice is also addressed to.
+  audiences   NoticeAudience[] @default([])
+  status      NoticeStatus     @default(DRAFT)
+  publishedOn DateTime?        @map("published_on") @db.Date
+  authorId    String?          @map("author_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  author      User?              @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  attachments NoticeAttachment[]
+
+  @@index([status, publishedOn])
+  @@index([category])
+  @@index([audience])
+  @@index([authorId])
+  @@map("notices")
+}
+
+/// A file attached to a notice.
+model NoticeAttachment {
+  id       String  @id @default(cuid())
+  noticeId String  @map("notice_id")
+  name     String
+  /// The file format, e.g. "PDF".
+  format   String?
+  size     String?
+  url      String?
+
+  notice Notice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+
+  @@index([noticeId])
+  @@map("notice_attachments")
+}
+
+/**
+ * ---------------------------------------------------------------- gallery ---
+ */
+
+/// An album of photographs.
+model GalleryAlbum {
+  id          String            @id @default(cuid())
+  title       String
+  /// The slug used in the route `/gallery/[albumId]`.
+  slug        String            @unique
+  category    String?
+  visibility  GalleryVisibility @default(PUBLIC)
+  description String?
+  coverUrl    String?           @map("cover_url")
+  /// The number of photographs the album shows, as the gallery counts them.
+  photoCount  Int               @default(0) @map("photo_count")
+  publishedOn DateTime?         @map("published_on") @db.Date
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  photos GalleryPhoto[]
+
+  @@index([category])
+  @@index([visibility])
+  @@map("gallery_albums")
+}
+
+/// One photograph inside an album.
+model GalleryPhoto {
+  id           String             @id @default(cuid())
+  albumId      String             @map("album_id")
+  url          String
+  caption      String?
+  /// The file name, as it was uploaded.
+  name         String?
+  size         String?
+  /// The intrinsic size of the photograph.
+  width        Int?
+  height       Int?
+  status       GalleryPhotoStatus @default(PENDING)
+  uploadedById String?            @map("uploaded_by_id")
+  reviewedById String?            @map("reviewed_by_id")
+  reviewedAt   DateTime?          @map("reviewed_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  album      GalleryAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  uploadedBy User?        @relation("GalleryUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  reviewedBy User?        @relation("GalleryReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([albumId, status])
+  @@index([status])
+  @@index([uploadedById])
+  @@index([reviewedById])
+  @@map("gallery_photos")
+}
+
+/**
+ * --------------------------------------------------------- routine, dates ---
+ */
+
+/// The weekly timetable of one section, in force from a date.
+model Routine {
+  id            String   @id @default(cuid())
+  classId       String   @map("class_id")
+  sectionId     String   @map("section_id")
+  /// The date the timetable takes effect from.
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  published     Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  class   Class           @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section Section         @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  periods RoutinePeriod[]
+
+  @@unique([classId, sectionId, effectiveFrom])
+  @@index([sectionId])
+  @@map("routines")
+}
+
+/// One period of the weekly timetable.
+model RoutinePeriod {
+  id        String  @id @default(cuid())
+  routineId String  @map("routine_id")
+  /// The day of the week, 0 for Sunday through 6 for Saturday.
+  day       Int
+  /// The period number, from 1.
+  period    Int
+  subjectId String? @map("subject_id")
+  teacherId String? @map("teacher_id")
+  /// The start time, "08:00".
+  startTime String  @map("start_time")
+  /// The end time, "08:45".
+  endTime   String  @map("end_time")
+  /// The room the period is held in, e.g. "Lab 1".
+  room      String?
+
+  routine Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  @@unique([routineId, day, period])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([routineId])
+  @@map("routine_periods")
+}
+
+/// An entry of the academic calendar.
+model CalendarEvent {
+  id          String            @id @default(cuid())
+  title       String
+  date        DateTime          @db.Date
+  endDate     DateTime?         @map("end_date") @db.Date
+  type        CalendarEventType
+  /// Who the entry is addressed to.
+  audience    String?
+  description String?
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@index([date])
+  @@index([type])
+  @@map("calendar_events")
+}
+
+/**
+ * -------------------------------------------------------------- audit log ---
+ */
+
+/// One recorded change.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  /// What the actor did, e.g. "Created account".
+  action     String
+  /// The kind of record that was changed, e.g. "User".
+  entityType String   @map("entity_type")
+  /// The identifier of the changed record.
+  entityId   String   @map("entity_id")
+  /// Any extra detail about the change.
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+/**
+ * ------------------------------------------------------------ site content ---
+ */
+
+/// One step of the admission journey.
+model AdmissionStep {
+  id          String @id @default(cuid())
+  title       String
+  description String
+  position    Int    @default(0)
+
+  @@map("admission_steps")
+}
+
+/// A tile of the quick-access row on the home page.
+model QuickLink {
+  id       String  @id @default(cuid())
+  label    String
+  href     String
+  /// The name of the icon, e.g. "BookOpen".
+  icon     String?
+  position Int     @default(0)
+
+  @@map("quick_links")
+}
+
+/// One figure of the "school at a glance" row.
+model SchoolStat {
+  id       String @id @default(cuid())
+  label    String
+  value    String
+  position Int    @default(0)
+
+  @@map("school_stats")
+}
+
+/// A block of copy on the about page, keyed by its place on the page.
+model AboutContent {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+
+  @@map("about_content")
+}
+
+/// One entry of the public navbar. A dropdown is a parent with children.
+model NavigationItem {
+  id       String  @id @default(cuid())
+  label    String
+  href     String?
+  parentId String? @map("parent_id")
+  position Int     @default(0)
+  visible  Boolean @default(true)
+
+  parent   NavigationItem?  @relation("NavigationChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children NavigationItem[] @relation("NavigationChildren")
+
+  @@index([parentId])
+  @@index([position])
+  @@map("navigation_items")
+}
+
+/// One entry of a portal sidebar or bottom tab bar.
+model PortalNavItem {
+  id       String   @id @default(cuid())
+  role     UserRole
+  label    String
+  href     String
+  /// The name of the icon, e.g. "attendance".
+  icon     String?
+  /// The kind of the entry: "link", "dropdown" or "logout".
+  kind     String   @default("link")
+  position Int      @default(0)
+  parentId String?  @map("parent_id")
+
+  parent   PortalNavItem?  @relation("PortalNavChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children PortalNavItem[] @relation("PortalNavChildren")
+
+  @@index([role, position])
+  @@index([parentId])
+  @@map("portal_nav_items")
+}

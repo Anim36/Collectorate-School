@@ -48,3 +48,5 @@ next-env.d.ts
 
 # local verification scripts output
 /tmp/
+
+/src/generated/prisma

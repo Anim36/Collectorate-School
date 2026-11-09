@@ -33,12 +33,62 @@ The dev server runs on <http://localhost:3000>.
 | `npm run start` | Serves the production build. |
 | `npm run lint` | ESLint over the whole project. |
 | `npm run type-check` | `tsc --noEmit`. |
+| `npm run db:generate` | Generates the Prisma client into `src/generated/prisma`. |
+| `npm run db:validate` | Checks the Prisma schema. |
+| `npm run db:migrate` | Applies the migrations to the database and generates the client. |
+| `npm run db:deploy` | Applies the migrations without a shadow database. |
+| `npm run db:seed` | Writes the school structure and the demo data. Safe to run twice. |
+| `npm run db:reset` | Drops the database, applies the migrations and seeds it again. |
+| `npm run db:studio` | Opens Prisma Studio. |
+| `npm run db:check` | Reads a few tables to prove the client reaches PostgreSQL. |
+| `npm run db:counts` | Prints the row count of every seeded table. |
 
 ### Environment
 
 Nothing is required to run the app. `.env.example` lists the variables the
-backend will need; copy it to `.env.local` when there is something to put in
-it.
+backend will need; copy it to `.env` and fill them in when there is something
+to put in it.
+
+| Variable | What it is |
+| --- | --- |
+| `DATABASE_URL` | The PostgreSQL database the Prisma client connects to. |
+| `SHADOW_DATABASE_URL` | The database Prisma replays the migrations on to work out the next one. It is dropped and rebuilt every time. |
+| `SEED_ADMIN_LOGIN` | The login of the admin account the seed creates. |
+| `SEED_ADMIN_PASSWORD` | Its password. |
+| `SEED_DEMO_PASSWORD` | The password every demo account gets. |
+
+### The database
+
+The schema lives in [`prisma/schema.prisma`](prisma/schema.prisma) and covers
+every entity the UI renders — the mock files in `src/data` become rows of
+these tables, as [`docs/BACKEND_HANDOFF.md`](docs/BACKEND_HANDOFF.md) maps
+them. `DATABASE_URL` in `.env` points at the PostgreSQL database.
+
+```powershell
+npm run db:generate   # after a schema change
+npm run db:migrate    # apply the migrations
+npm run db:seed       # write the school structure and the demo data
+npm run db:counts     # see what was written
+npm run db:check      # confirm the client reaches the database
+```
+
+The seed is idempotent: it writes every row with an upsert on its unique key,
+so running it twice leaves the database as running it once did.
+
+#### The school
+
+The school runs from Nursery to Class 10 and every class is a single group:
+there are no A/B/C sections, no boy/girl split and no shifts.
+
+| | |
+| --- | --- |
+| Classes | Nursery, KG, Class 1 … Class 10 — twelve classes, ordered by `sortOrder` (0 for Nursery, 11 for Class 10) |
+| Sections | One per class, named "Default" and flagged `isDefault` |
+| Grading | `GPA` for Class 1 to Class 10, `GRADE_ONLY` for Nursery and KG |
+
+The server-side client is `src/server/db.ts`. It reads `DATABASE_URL` when the
+first query runs and parks the connection pool on `globalThis`, so the dev
+server does not open a new pool on every reload.
 
 ---
 
