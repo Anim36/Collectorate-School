@@ -50,3 +50,7 @@ next-env.d.ts
 /tmp/
 
 /src/generated/prisma
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
