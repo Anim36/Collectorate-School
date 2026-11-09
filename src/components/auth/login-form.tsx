@@ -13,6 +13,7 @@ import { PasswordField } from "@/components/auth/password-field";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
+import { loginAction } from "@/app/(auth)/actions";
 
 const loginSchema = z.object({
   role: z.enum(["student", "teacher"]),
@@ -20,8 +21,7 @@ const loginSchema = z.object({
     .string()
     .min(1, "Enter your student ID or email address")
     .refine(
-      (value) =>
-        value.includes("@") || /^ST-\d{4}-\d{4}$/i.test(value.trim()),
+      (value) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.trim()),
       "Enter a valid student ID or email address",
     ),
   password: z.string().min(1, "Enter your password"),
@@ -30,15 +30,12 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-/** Mock credentials accepted by the demo sign-in check. */
-const MOCK_IDENTIFIER = "ST-2026-0042";
-const MOCK_PASSWORD = "password123";
-
 export function LoginForm() {
   const router = useRouter();
   const [role, setRole] = useState<"student" | "teacher">("student");
   const [submitting, setSubmitting] = useState(false);
   const [signInError, setSignInError] = useState(false);
+  const [forgotPassword, setForgotPassword] = useState(false);
 
   const {
     register,
@@ -58,15 +55,16 @@ export function LoginForm() {
     setSignInError(false);
     setSubmitting(true);
 
-    // Simulate the authentication round trip.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const formData = new FormData();
+    formData.set("loginId", values.identifier.trim());
+    formData.set("password", values.password);
+    formData.set("role", values.role);
 
-    const matches =
-      values.identifier.trim() === MOCK_IDENTIFIER &&
-      values.password === MOCK_PASSWORD;
+    const result = await loginAction(null, formData);
 
-    if (!matches) {
-      setSubmitting(false);
+    setSubmitting(false);
+
+    if (!result.ok) {
       setSignInError(true);
       return;
     }
@@ -76,7 +74,8 @@ export function LoginForm() {
       description: `Welcome back to the ${values.role} portal.`,
     });
 
-    router.push(`/${values.role}/dashboard`);
+    router.push(result.redirectTo ?? `/${values.role}/dashboard`);
+    router.refresh();
   });
 
   return (
@@ -164,12 +163,12 @@ export function LoginForm() {
             />
             Remember me
           </label>
-          <Link
-            href="/change-password"
-            className="text-caption leading-[1.45] text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <button
+            type="button"
+            onClick={() => setForgotPassword(true)}            className="text-caption leading-[1.45] text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Forgot password?
-          </Link>
+          </button>
         </div>
 
         {signInError ? (
@@ -200,6 +199,22 @@ export function LoginForm() {
           <p className="mt-6 text-caption leading-[1.45] text-muted">
             Connecting securely to your school account…
           </p>
+        ) : null}
+
+        {forgotPassword ? (
+          <div
+            role="status"
+            data-auth="forgot-password"
+            className="mt-6 flex w-full flex-col rounded-[12px] border border-border bg-surface p-4"
+          >
+            <p className="text-body font-semibold leading-[1.45] text-ink">
+              Password resets are handled by the school
+            </p>
+            <p className="mt-1 text-caption leading-[1.45] text-muted">
+              There is no self-service reset. Contact the school office and an
+              admin will reset your password.
+            </p>
+          </div>
         ) : null}
 
         <div className="mt-6">

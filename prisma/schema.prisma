@@ -147,6 +147,10 @@ model User {
   failedLoginCount   Int       @default(0) @map("failed_login_count")
   lockedUntil        DateTime? @map("locked_until")
   lastLoginAt        DateTime? @map("last_login_at")
+  /// Bumped whenever the password changes or the account is deactivated or
+  /// reset. It is carried in the session, so a session made before the bump
+  /// no longer matches the row and the user is signed out.
+  sessionVersion     Int       @default(0) @map("session_version")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 

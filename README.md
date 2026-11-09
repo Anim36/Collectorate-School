@@ -90,6 +90,36 @@ The server-side client is `src/server/db.ts`. It reads `DATABASE_URL` when the
 first query runs and parks the connection pool on `globalThis`, so the dev
 server does not open a new pool on every reload.
 
+### Signing in
+
+The portals are behind Auth.js, with a credentials provider. There is no
+public signup: an admin creates every account, and the seed creates the demo
+ones.
+
+| | |
+| --- | --- |
+| Sign-in | `loginId` and a password. A student signs in with their student id, a teacher or the admin with their email or staff id. |
+| Session | A signed cookie that lasts eight hours. It carries the user id, the role, the name, the password-change flag and the session version — never the password hash. |
+| Lockout | Five wrong passwords lock the account for fifteen minutes. |
+| Errors | Every failure shows the same message, so the form cannot be used to work out which ids exist. |
+| The tabs | The Student and Teacher tabs are a hint. An admin may sign in from either one; anyone else has to use the tab that matches their role. |
+| Forgotten passwords | Handled by the admin. There is no self-service reset. |
+
+The files:
+
+| File | What it holds |
+| --- | --- |
+| `auth.config.ts` | The configuration the middleware loads. It holds nothing that needs the Node runtime. |
+| `auth.ts` | The full configuration, with the credentials provider. |
+| `src/middleware.ts` | The route protection. |
+| `src/server/auth-guard.ts` | `getCurrentUser` and `requireRole`, which re-read the user from the database on every protected request. |
+| `src/server/services/auth.ts` | The credentials check, the lockout and the audit trail. |
+| `src/app/(auth)/actions.ts` | The sign-in, password change and sign-out server actions. |
+
+The session version on the user row moves whenever the password changes or
+the account is deactivated or reset. A session made before that no longer
+matches the row, so it stops working straight away.
+
 ---
 
 ## The routes

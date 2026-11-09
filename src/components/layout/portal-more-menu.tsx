@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Ellipsis } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { LogoutButton } from "@/components/layout/logout-button";
 import { portalIcons } from "@/components/layout/portal-icons";
 import { isActivePortalPath } from "@/components/layout/portal-sidebar";
 import type { PortalNavItem } from "@/data/portal-navigation";
@@ -103,6 +104,21 @@ export function PortalMoreMenu({ items, label }: PortalMoreMenuProps) {
             {items.map((item) => {
               const isActive = isActivePortalPath(pathname, item.href);
               const Icon = item.icon ? portalIcons[item.icon] : null;
+
+              // The sign-out entry posts to the logout action instead of
+              // linking away, so the session is torn down and the sign-out
+              // is recorded.
+              if (item.kind === "logout") {
+                return (
+                  <LogoutButton
+                    key={item.label}
+                    label={item.label}
+                    showLabel={Boolean(Icon)}
+                    className="w-full items-center gap-3 rounded-[12px] px-3 py-3 text-ink hover:bg-tint hover:text-primary"
+                    iconClassName="size-6 shrink-0"
+                  />
+                );
+              }
 
               return (
                 <Link

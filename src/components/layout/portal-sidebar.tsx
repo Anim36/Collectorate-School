@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { LogoutButton } from "@/components/layout/logout-button";
 import { portalIcons } from "@/components/layout/portal-icons";
 import type { PortalNavItem } from "@/data/portal-navigation";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,24 @@ export function PortalSidebar({
         {items.map((item) => {
           const isActive = isActivePortalPath(pathname, item.href);
           const Icon = item.icon ? portalIcons[item.icon] : null;
+
+          // The sign-out entry posts to the logout action instead of linking
+          // away, so the session is torn down and the sign-out is recorded.
+          if (item.kind === "logout") {
+            return (
+              <LogoutButton
+                key={item.label}
+                label={item.label}
+                showLabel={Boolean(Icon)}
+                className={cn(
+                  "w-[192px] shrink-0 items-start overflow-hidden",
+                  iconGap === "sm" ? "gap-3" : "gap-2",
+                  !Icon && "h-5 items-center p-0",
+                )}
+                iconClassName="size-6 shrink-0"
+              />
+            );
+          }
 
           return (
             <Link

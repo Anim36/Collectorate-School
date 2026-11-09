@@ -4,31 +4,16 @@ import Link from "next/link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 
 import { AccountGuidance } from "@/components/auth/account-guidance";
 import { PasswordField } from "@/components/auth/password-field";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
-
-const changePasswordSchema = z
-  .object({
-    currentPassword: z.string().min(1, "Enter your current password"),
-    newPassword: z
-      .string()
-      .min(12, "Password must be at least 12 characters")
-      .regex(/\d/, "Include a number in your password"),
-    confirmPassword: z.string().min(1, "Confirm your new password"),
-  })
-  .refine((values) => values.newPassword === values.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
-
-type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
-
-/** Mock credential accepted by the demo password update check. */
-const MOCK_CURRENT_PASSWORD = "password123";
+import { changePasswordAction } from "@/app/(auth)/actions";
+import {
+  changePasswordSchema,
+  type ChangePasswordValues,
+} from "@/lib/password-schema";
 
 /**
  * Password rules shown under the new-password field.
@@ -63,12 +48,16 @@ export function ChangePasswordForm() {
     setSaved(false);
     setSubmitting(true);
 
-    // Simulate the password update round trip.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const formData = new FormData();
+    formData.set("currentPassword", values.currentPassword);
+    formData.set("newPassword", values.newPassword);
+    formData.set("confirmPassword", values.confirmPassword);
+
+    const result = await changePasswordAction(null, formData);
 
     setSubmitting(false);
 
-    if (values.currentPassword !== MOCK_CURRENT_PASSWORD) {
+    if (!result.ok) {
       setFormError(true);
       return;
     }
