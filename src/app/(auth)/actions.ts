@@ -6,9 +6,11 @@ import { auth, signIn, signOut, unstable_update } from "@/auth";
 import {
   GENERIC_AUTH_ERROR,
   ROLE_HOME,
+  ROLE_SIGN_IN,
   type SessionRole,
 } from "@/server/auth-types";
 import { changePasswordSchema } from "@/lib/password-schema";
+import { loginRoleSchema, type LoginRole } from "@/lib/login-schema";
 import { recordLogout } from "@/server/services/auth";
 
 /**
@@ -29,8 +31,9 @@ export interface LoginActionResult {
 /**
  * Signs a user in.
  *
- * The tab the user pressed is only a hint: the account's real role decides
- * where they land, and an admin may sign in from either tab.
+ * The entry point the user came from is sent with the form and is checked
+ * against the account's real role: a student signs in from the student tab,
+ * a teacher from the teacher tab and an admin from the admin sign-in page.
  */
 export async function loginAction(
   _previous: LoginActionResult | null,
@@ -38,7 +41,20 @@ export async function loginAction(
 ): Promise<LoginActionResult> {
   const loginId = String(formData.get("loginId") ?? "");
   const password = String(formData.get("password") ?? "");
-  const role = formData.get("role") === "teacher" ? "teacher" : "student";
+
+  // The role comes from the form, so it is validated here. An entry point
+  // that is not one of the three is refused before anything else happens.
+  const parsedRole = loginRoleSchema.safeParse(formData.get("role"));
+
+  if (!parsedRole.success) {
+    return {
+      ok: false,
+      message: GENERIC_AUTH_ERROR,
+      redirectTo: null,
+    };
+  }
+
+  const role: LoginRole = parsedRole.data;
 
   // The credentials are checked here rather than by the provider, so the
   // role of the account is known before the redirect is worked out. The
@@ -95,6 +111,8 @@ export interface ChangePasswordActionResult {
   ok: boolean;
   /** The message to show, when it failed. */
   message: string;
+  /** The dashboard the user is sent to, when it worked. */
+  redirectTo: string | null;
 }
 
 /**
@@ -118,6 +136,7 @@ export async function changePasswordAction(
     return {
       ok: false,
       message: "Your session has ended. Please sign in again.",
+      redirectTo: null,
     };
   }
 
@@ -134,6 +153,7 @@ export async function changePasswordAction(
       ok: false,
       message:
         parsed.error.issues[0]?.message ?? "Those passwords do not match",
+      redirectTo: null,
     };
   }
 
@@ -152,24 +172,26 @@ export async function changePasswordAction(
         result.reason === "locked"
           ? "Too many attempts. Please wait a few minutes and try again."
           : "Your current password is incorrect",
+      redirectTo: null,
     };
   }
 
-  // The session version moved, so the session that is open no longer
-  // matches the row. The session is re-issued with the new version, so the
-  // user stays signed in on this device while every other session stops
-  // working.
+  // The session version moved, so the session that is open no longer matches
+  // the row. The session is re-issued, so the user stays signed in on this
+  // device while every other session stops working.
+  //
+  // Nothing about the new claims is taken from the browser: the callback
+  // reads the flag and the version from the row again, so the session that
+  // comes back carries what the database actually says.
   await unstable_update({
     user: {
       id: session.user.id,
-      role: session.user.role,
-      name: session.user.name,
-      mustChangePassword: false,
-      sessionVersion: session.user.sessionVersion + 1,
     },
   });
 
-  return { ok: true, message: "" };
+  const role = session.user.role as SessionRole;
+
+  return { ok: true, message: "", redirectTo: ROLE_HOME[role] };
 }
 
 /**
@@ -177,13 +199,20 @@ export async function changePasswordAction(
  *
  * The audit row is written before the session is torn down, so the sign-out
  * is recorded even though the session is gone afterwards.
+ *
+ * An admin is sent to the admin sign-in page and everyone else to the
+ * school sign-in page.
  */
 export async function logoutAction(): Promise<void> {
   const session = await auth();
 
+  let signInPage = "/login";
+
   if (session?.user?.id) {
     await recordLogout(session.user.id);
+
+    signInPage = ROLE_SIGN_IN[session.user.role as SessionRole] ?? "/login";
   }
 
-  await signOut({ redirectTo: "/login" });
+  await signOut({ redirectTo: signInPage });
 }

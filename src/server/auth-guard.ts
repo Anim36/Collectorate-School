@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/server/db";
 import {
   ROLE_HOME,
+  ROLE_SIGN_IN,
   type SessionRole,
   type SessionUser,
 } from "@/server/auth-types";
@@ -91,7 +92,7 @@ export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect("/login");
+    redirect(await signInPageFor());
   }
 
   if (user.mustChangePassword) {
@@ -99,6 +100,21 @@ export async function requireUser(): Promise<CurrentUser> {
   }
 
   return user;
+}
+
+/**
+ * The sign-in page of the role the session belongs to.
+ *
+ * An admin who is not signed in, or whose account no longer matches the
+ * session, is sent to the admin sign-in page rather than to the school one,
+ * so the admin portal never shows the student and teacher tabs.
+ */
+async function signInPageFor(): Promise<string> {
+  const session = await auth();
+
+  const role = session?.user?.role as SessionRole | undefined;
+
+  return role ? ROLE_SIGN_IN[role] : "/login";
 }
 
 /**

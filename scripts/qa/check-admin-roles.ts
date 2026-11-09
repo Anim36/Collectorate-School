@@ -273,7 +273,7 @@ async function main(): Promise<void> {
 
   /* --- 1. An admin reaches the admin pages. ----------------------------- */
 
-  const adminJar = await signIn(IDS.admin, "student");
+  const adminJar = await signIn(IDS.admin, "ADMIN");
 
   const adminPage = adminJar
     ? await request("/admin/users", { jar: adminJar })
@@ -297,8 +297,8 @@ async function main(): Promise<void> {
 
   /* --- 2. A student and a teacher are kept out of the admin pages. ------ */
 
-  const studentJar = await signIn(IDS.student, "student");
-  const teacherJar = await signIn(IDS.teacher, "teacher");
+  const studentJar = await signIn(IDS.student, "STUDENT");
+  const teacherJar = await signIn(IDS.teacher, "TEACHER");
 
   const studentAdmin = studentJar
     ? await request("/admin/users", { jar: studentJar })

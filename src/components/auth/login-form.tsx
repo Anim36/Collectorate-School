@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { AccountGuidance } from "@/components/auth/account-guidance";
 import { AuthField } from "@/components/auth/auth-field";
@@ -14,42 +14,92 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { loginAction } from "@/app/(auth)/actions";
+import {
+  ADMIN_ENTRY_COPY,
+  STUDENT_ENTRY_COPY,
+  TEACHER_ENTRY_COPY,
+  buildLoginSchema,
+  type LoginEntryCopy,
+  type LoginRole,
+} from "@/lib/login-schema";
 
-const loginSchema = z.object({
-  role: z.enum(["student", "teacher"]),
-  identifier: z
-    .string()
-    .min(1, "Enter your student ID or email address")
-    .refine(
-      (value) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value.trim()),
-      "Enter a valid student ID or email address",
-    ),
-  password: z.string().min(1, "Enter your password"),
-  remember: z.boolean(),
-});
+/** The two tabs of the school sign-in page. */
+const TABS = [
+  { role: "STUDENT" as const, label: "Student", copy: STUDENT_ENTRY_COPY },
+  { role: "TEACHER" as const, label: "Teacher", copy: TEACHER_ENTRY_COPY },
+];
 
-type LoginValues = z.infer<typeof loginSchema>;
+/** The values the sign-in form holds. */
+type LoginValues = z.infer<ReturnType<typeof buildLoginSchema>>;
 
-export function LoginForm() {
+export interface LoginFormProps {
+  /**
+   * The entry point the page is for.
+   *
+   * "STUDENT" and "TEACHER" draw the tab row; "ADMIN" draws the admin page,
+   * which has no tabs and always sends the admin role.
+   */
+  entry?: "STUDENT" | "TEACHER" | "ADMIN";
+}
+
+/**
+ * The sign-in form.
+ *
+ * The label and the placeholder of the id field follow the tab, so the form
+ * asks for the id the user was told to use. Switching the tab clears the
+ * fields and the error, because the id that was typed belongs to the entry
+ * point that has just been left.
+ */
+export function LoginForm({ entry }: LoginFormProps = {}) {
   const router = useRouter();
-  const [role, setRole] = useState<"student" | "teacher">("student");
+
+  // The admin page has no tabs, so it pins the role and the wording.
+  const isAdmin = entry === "ADMIN";
+
+  const [role, setRole] = useState<LoginRole>(
+    isAdmin ? "ADMIN" : entry === "TEACHER" ? "TEACHER" : "STUDENT",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [signInError, setSignInError] = useState(false);
   const [forgotPassword, setForgotPassword] = useState(false);
 
+  const copy: LoginEntryCopy = isAdmin
+    ? ADMIN_ENTRY_COPY
+    : (TABS.find((tab) => tab.role === role)?.copy ?? STUDENT_ENTRY_COPY);
+
+  // The resolver is built from the wording of the current tab, so the
+  // messages under the field always name the entry point that is on screen.
+  const resolver = useMemo(
+    () => zodResolver(buildLoginSchema(copy)),
+    [copy],
+  );
+
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
+    resolver,
     defaultValues: {
-      role: "student",
+      role: isAdmin ? "ADMIN" : "STUDENT",
       identifier: "",
       password: "",
       remember: true,
     },
   });
+
+  /**
+   * Switches the tab.
+   *
+   * The fields are cleared, because the id that was typed belongs to the
+   * entry point that is being left, and the error is cleared with them.
+   */
+  const changeRole = (next: LoginRole) => {
+    setRole(next);
+    reset({ role: next, identifier: "", password: "", remember: true });
+    setSignInError(false);
+  };
 
   const onSubmit = handleSubmit(async (values) => {
     setSignInError(false);
@@ -71,10 +121,10 @@ export function LoginForm() {
 
     toast({
       title: "Signed in",
-      description: `Welcome back to the ${values.role} portal.`,
+      description: `Welcome back to the ${values.role.toLowerCase()} portal.`,
     });
 
-    router.push(result.redirectTo ?? `/${values.role}/dashboard`);
+    router.push(result.redirectTo ?? `/${values.role.toLowerCase()}/dashboard`);
     router.refresh();
   });
 
@@ -95,35 +145,39 @@ export function LoginForm() {
         data-auth="heading"
         className="mt-6 text-heading font-bold leading-[1.45] text-ink"
       >
-        Welcome back.
+        {isAdmin ? "Admin sign in." : "Welcome back."}
       </h1>
       <p
         data-auth="subheading"
         className="mt-6 text-body leading-[1.45] text-muted"
       >
-        Sign in to your school account.
+        {isAdmin
+          ? "Sign in with your administrator account."
+          : "Sign in to your school account."}
       </p>
 
-      <Tabs
-        value={role}
-        onValueChange={(value) => setRole(value as "student" | "teacher")}
-        className="mt-6"
-        data-auth="tabs"
-      >
-        <TabsList className="h-[55px] w-full gap-0 bg-transparent p-0">
-          {(["student", "teacher"] as const).map((value) => (
-            <TabsTrigger
-              key={value}
-              value={value}
-              className={
-                "h-[39px] flex-1 rounded-[12px] border border-border bg-surface text-body font-semibold leading-[1.45] text-muted transition-colors data-[state=active]:border-primary data-[state=active]:bg-tint data-[state=active]:text-primary"
-              }
-            >
-              {value === "student" ? "Student" : "Teacher"}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      {isAdmin ? null : (
+        <Tabs
+          value={role}
+          onValueChange={(value) => changeRole(value as LoginRole)}
+          className="mt-6"
+          data-auth="tabs"
+        >
+          <TabsList className="h-[55px] w-full gap-0 bg-transparent p-0">
+            {TABS.map((tab) => (
+              <TabsTrigger
+                key={tab.role}
+                value={tab.role}
+                className={
+                  "h-[39px] flex-1 rounded-[12px] border border-border bg-surface text-body font-semibold leading-[1.45] text-muted transition-colors data-[state=active]:border-primary data-[state=active]:bg-tint data-[state=active]:text-primary"
+                }
+              >
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
 
       <form
         onSubmit={onSubmit}
@@ -134,8 +188,8 @@ export function LoginForm() {
 
         <AuthField
           data-auth="identifier"
-          label="Student ID / email"
-          placeholder="e.g. ST-2026-0042"
+          label={copy.label}
+          placeholder={copy.placeholder}
           autoComplete="username"
           error={errors.identifier?.message}
           {...register("identifier")}
@@ -165,7 +219,8 @@ export function LoginForm() {
           </label>
           <button
             type="button"
-            onClick={() => setForgotPassword(true)}            className="text-caption leading-[1.45] text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setForgotPassword(true)}
+            className="text-caption leading-[1.45] text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Forgot password?
           </button>

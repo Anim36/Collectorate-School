@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,24 +12,20 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { changePasswordAction } from "@/app/(auth)/actions";
 import {
+  PASSWORD_RULES,
   changePasswordSchema,
   type ChangePasswordValues,
 } from "@/lib/password-schema";
 
-/**
- * Password rules shown under the new-password field.
- * Figma node 2:3323 is a 57px block, i.e. three 19px lines of 13px copy.
- */
-const PASSWORD_RULES = [
-  "✓ At least 12 characters",
-  "✓ Include a number and a symbol",
-  "✓ No spaces or personal details",
-] as const;
+/** How long the success state stays on screen before the dashboard opens. */
+const REDIRECT_DELAY_MS = 1500;
 
 export function ChangePasswordForm() {
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
 
   const {
     register,
@@ -65,8 +62,19 @@ export function ChangePasswordForm() {
     setSaved(true);
     toast({
       title: "Password updated",
-      description: "Use your new password the next time you sign in.",
+      description: "Taking you to your dashboard.",
     });
+
+    // The dashboard of the role the account holds is opened after a moment,
+    // so the success state is read before the page moves on.
+    const target = result.redirectTo;
+
+    if (target) {
+      setTimeout(() => {
+        router.push(target);
+        router.refresh();
+      }, REDIRECT_DELAY_MS);
+    }
   });
 
   return (
@@ -116,7 +124,9 @@ export function ChangePasswordForm() {
             placeholder="Enter a new password"
             autoComplete="new-password"
             error={errors.newPassword?.message}
-            {...register("newPassword")}
+            {...register("newPassword", {
+              onChange: (event) => setNewPassword(event.target.value),
+            })}
           />
         </div>
 
@@ -130,12 +140,16 @@ export function ChangePasswordForm() {
           />
         </div>
 
+        {/* The checklist is written from the same rules the form validates
+            with, so it can never promise more than the form accepts. */}
         <ul
           data-auth="strength"
           className="mt-6 flex flex-col text-caption leading-[1.45] text-muted"
         >
           {PASSWORD_RULES.map((rule) => (
-            <li key={rule}>{rule}</li>
+            <li key={rule.label}>
+              {rule.met(newPassword) ? "✓" : "○"} {rule.label}
+            </li>
           ))}
         </ul>
 
@@ -162,7 +176,7 @@ export function ChangePasswordForm() {
               Password updated
             </p>
             <p className="mt-1 text-caption leading-[1.45] text-muted">
-              Use your new password the next time you sign in.
+              Password updated. Taking you to your dashboard.
             </p>
           </div>
         ) : null}

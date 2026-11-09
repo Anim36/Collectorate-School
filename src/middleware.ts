@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { authConfig } from "@/auth.config";
 import {
   ROLE_HOME,
+  ROLE_SIGN_IN,
   type SessionRole,
 } from "@/server/auth-types";
 
@@ -38,8 +39,8 @@ export default auth((request) => {
   const isSignedIn = Boolean(session?.user?.id);
   const role = session?.user?.role as SessionRole | undefined;
 
-  // A signed-in user has no business on the sign-in page.
-  if (pathname === "/login") {
+  // A signed-in user has no business on a sign-in page.
+  if (pathname === "/login" || pathname === "/admin/login") {
     if (!isSignedIn) return NextResponse.next();
 
     return NextResponse.redirect(
@@ -65,9 +66,11 @@ export default auth((request) => {
 
   if (!protectedRoute) return NextResponse.next();
 
-  // Nobody signed in goes to the sign-in page.
+  // Nobody signed in goes to the sign-in page of their own portal: an admin
+  // has a page of their own, so the admin portal never shows the school
+  // tabs.
   if (!isSignedIn || !role) {
-    const signIn = new URL("/login", request.url);
+    const signIn = new URL(ROLE_SIGN_IN[protectedRoute.role], request.url);
 
     // The page the user was heading for is remembered, so the sign-in form
     // can send them back to it afterwards.
@@ -94,14 +97,23 @@ export const config = {
   /**
    * The routes the middleware runs on.
    *
-   * The public pages, the sign-in page and the password page are left out,
-   * except for the sign-in page, which has to send a signed-in user away.
+   * The public pages and the password page are left out, except for the
+   * sign-in pages, which have to send a signed-in user away.
+   *
+   * The admin sign-in page is left out of the admin rule with a negative
+   * look-ahead: it lives under /admin, but it is the page the admin rule
+   * sends a visitor to, so matching it would send them back to it for ever.
+   * The plain "/admin/:path*" pattern cannot be used, because Next.js
+   * matches each entry on its own and a "!" pattern would drop the whole
+   * admin rule.
    */
   matcher: [
     "/login",
+    "/admin/login",
     "/change-password",
     "/student/:path*",
     "/teacher/:path*",
-    "/admin/:path*",
+    "/admin",
+    "/admin/:path((?!login(?:/|$)).*)",
   ],
 };

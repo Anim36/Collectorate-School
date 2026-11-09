@@ -131,7 +131,7 @@ async function main(): Promise<void> {
   const studentLogin = await authenticateCredentials({
     loginId: IDS.student,
     password: PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
 
   check(
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   const teacherLogin = await authenticateCredentials({
     loginId: IDS.teacher,
     password: PASSWORD,
-    role: "teacher",
+    role: "TEACHER",
   });
 
   check(
@@ -157,25 +157,13 @@ async function main(): Promise<void> {
   const adminLogin = await authenticateCredentials({
     loginId: IDS.admin,
     password: PASSWORD,
-    role: "student",
+    role: "ADMIN",
   });
 
   check(
-    "an admin signs in from the student tab",
+    "an admin signs in from the admin entry",
     adminLogin.ok === true && adminLogin.userId === IDS.admin,
     JSON.stringify(adminLogin),
-  );
-
-  const adminTeacherTab = await authenticateCredentials({
-    loginId: IDS.admin,
-    password: PASSWORD,
-    role: "teacher",
-  });
-
-  check(
-    "an admin signs in from the teacher tab",
-    adminTeacherTab.ok === true && adminTeacherTab.userId === IDS.admin,
-    JSON.stringify(adminTeacherTab),
   );
 
   /* --- 2. A wrong password is refused. ----------------------------------- */
@@ -185,7 +173,7 @@ async function main(): Promise<void> {
   const wrongPassword = await authenticateCredentials({
     loginId: IDS.student,
     password: WRONG_PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
 
   check(
@@ -199,7 +187,7 @@ async function main(): Promise<void> {
   const unknownId = await authenticateCredentials({
     loginId: "auth-test-nobody",
     password: WRONG_PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
 
   check(
@@ -216,7 +204,7 @@ async function main(): Promise<void> {
   await authenticateCredentials({
     loginId: "auth-test-nobody",
     password: WRONG_PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
   const timeUnknown = Date.now() - timeUnknownStart;
 
@@ -224,7 +212,7 @@ async function main(): Promise<void> {
   await authenticateCredentials({
     loginId: IDS.student,
     password: WRONG_PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
   const timeWrong = Date.now() - timeWrongStart;
 
@@ -249,7 +237,7 @@ async function main(): Promise<void> {
     await authenticateCredentials({
       loginId: IDS.locked,
       password: WRONG_PASSWORD,
-      role: "student",
+      role: "STUDENT",
     });
   }
 
@@ -285,7 +273,7 @@ async function main(): Promise<void> {
   const lockedLogin = await authenticateCredentials({
     loginId: IDS.locked,
     password: PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
 
   check(
@@ -304,7 +292,7 @@ async function main(): Promise<void> {
   const afterLock = await authenticateCredentials({
     loginId: IDS.locked,
     password: PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
 
   check(
@@ -318,7 +306,7 @@ async function main(): Promise<void> {
   const inactiveLogin = await authenticateCredentials({
     loginId: IDS.inactive,
     password: PASSWORD,
-    role: "student",
+    role: "STUDENT",
   });
 
   check(
@@ -327,12 +315,12 @@ async function main(): Promise<void> {
     JSON.stringify(inactiveLogin),
   );
 
-  /* --- 9. A role that does not match the tab is refused. ----------------- */
+  /* --- 9. An entry point that does not match the role is refused. --------- */
 
   const roleMismatch = await authenticateCredentials({
     loginId: IDS.student,
     password: PASSWORD,
-    role: "teacher",
+    role: "TEACHER",
   });
 
   check(
@@ -341,7 +329,105 @@ async function main(): Promise<void> {
     JSON.stringify(roleMismatch),
   );
 
-  /* --- 10. Every failure carries the same message. ----------------------- */
+  const teacherMismatch = await authenticateCredentials({
+    loginId: IDS.teacher,
+    password: PASSWORD,
+    role: "STUDENT",
+  });
+
+  check(
+    "a teacher signing in on the student tab is refused",
+    teacherMismatch.ok === false && teacherMismatch.reason === "role_mismatch",
+    JSON.stringify(teacherMismatch),
+  );
+
+  const adminOnStudentTab = await authenticateCredentials({
+    loginId: IDS.admin,
+    password: PASSWORD,
+    role: "STUDENT",
+  });
+
+  check(
+    "an admin signing in on the student tab is refused",
+    adminOnStudentTab.ok === false &&
+      adminOnStudentTab.reason === "role_mismatch",
+    JSON.stringify(adminOnStudentTab),
+  );
+
+  const adminOnTeacherTab = await authenticateCredentials({
+    loginId: IDS.admin,
+    password: PASSWORD,
+    role: "TEACHER",
+  });
+
+  check(
+    "an admin signing in on the teacher tab is refused",
+    adminOnTeacherTab.ok === false &&
+      adminOnTeacherTab.reason === "role_mismatch",
+    JSON.stringify(adminOnTeacherTab),
+  );
+
+  const studentOnAdminTab = await authenticateCredentials({
+    loginId: IDS.student,
+    password: PASSWORD,
+    role: "ADMIN",
+  });
+
+  check(
+    "a student signing in on the admin tab is refused",
+    studentOnAdminTab.ok === false &&
+      studentOnAdminTab.reason === "role_mismatch",
+    JSON.stringify(studentOnAdminTab),
+  );
+
+  /* --- 10. A mismatch counts as a failed attempt. ------------------------ */
+
+  await resetAccount(IDS.student, { failedLoginCount: 0 });
+
+  await authenticateCredentials({
+    loginId: IDS.student,
+    password: PASSWORD,
+    role: "TEACHER",
+  });
+
+  const afterMismatch = await prisma.user.findUnique({
+    where: { loginId: IDS.student },
+    select: { failedLoginCount: true },
+  });
+
+  check(
+    "a role mismatch increases the failed login count",
+    afterMismatch?.failedLoginCount === 1,
+    JSON.stringify(afterMismatch),
+  );
+
+  /* --- 11. A mismatch takes the same time as a wrong password. ------------ */
+
+  await resetAccount(IDS.student, { failedLoginCount: 0 });
+
+  const timeMismatchStart = Date.now();
+  await authenticateCredentials({
+    loginId: IDS.student,
+    password: PASSWORD,
+    role: "TEACHER",
+  });
+  const timeMismatch = Date.now() - timeMismatchStart;
+
+  const timeWrongRoleStart = Date.now();
+  await authenticateCredentials({
+    loginId: IDS.student,
+    password: WRONG_PASSWORD,
+    role: "STUDENT",
+  });
+  const timeWrongRole = Date.now() - timeWrongRoleStart;
+
+  check(
+    "a role mismatch takes about the same time as a wrong password",
+    Math.abs(timeMismatch - timeWrongRole) < 250,
+    `mismatch ${timeMismatch}ms, wrong password ${timeWrongRole}ms`,
+  );
+
+  /* --- 12. Every failure carries the same message. ----------------------- */
 
   const messages = new Set<string>();
   messages.add(GENERIC_AUTH_ERROR);
@@ -354,14 +440,14 @@ async function main(): Promise<void> {
     GENERIC_AUTH_ERROR,
   );
 
-  /* --- 11. A successful sign-in resets the counter. ----------------------- */
+  /* --- 13. A successful sign-in resets the counter. ----------------------- */
 
   await resetAccount(IDS.teacher, { failedLoginCount: 3 });
 
   await authenticateCredentials({
     loginId: IDS.teacher,
     password: PASSWORD,
-    role: "teacher",
+    role: "TEACHER",
   });
 
   const afterSuccess = await prisma.user.findUnique({
@@ -433,13 +519,13 @@ async function main(): Promise<void> {
   const oldPassword = await authenticateCredentials({
     loginId: IDS.teacher,
     password: PASSWORD,
-    role: "teacher",
+    role: "TEACHER",
   });
 
   const newPassword = await authenticateCredentials({
     loginId: IDS.teacher,
     password: "Brand-New-Pass-2026!",
-    role: "teacher",
+    role: "TEACHER",
   });
 
   check(

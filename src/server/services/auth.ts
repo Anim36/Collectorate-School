@@ -8,13 +8,16 @@ import {
   GENERIC_AUTH_ERROR,
   LOCKOUT_MINUTES,
   MAX_FAILED_LOGINS,
+  type SessionRole,
 } from "@/server/auth-types";
+import { loginRoleSchema, type LoginRole } from "@/lib/login-schema";
 
 /**
  * The sign-in form, validated before anything touches the database.
  *
- * The role is only a hint from the tab the user pressed. It is checked
- * against the account's real role afterwards.
+ * The role is the entry point the sign-in was made from. It is checked
+ * against the account's real role afterwards, so a student cannot reach the
+ * teacher portal by asking for it.
  */
 export const loginSchema = z.object({
   loginId: z
@@ -23,11 +26,23 @@ export const loginSchema = z.object({
     .min(1, "Enter your ID")
     .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Enter a valid ID"),
   password: z.string().min(1, "Enter your password"),
-  role: z.enum(["student", "teacher"]),
+  role: loginRoleSchema,
 });
 
 /** The validated sign-in input. */
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/**
+ * The role the account has to hold for each entry point.
+ *
+ * A student signs in from the student tab, a teacher from the teacher tab and
+ * an admin from the admin sign-in page. Nothing else is accepted.
+ */
+const ROLE_FOR_ENTRY: Record<LoginRole, SessionRole> = {
+  STUDENT: "STUDENT",
+  TEACHER: "TEACHER",
+  ADMIN: "ADMIN",
+};
 
 /**
  * Why a sign-in was refused.
@@ -110,8 +125,8 @@ async function writeAudit(input: {
  *    id is real.
  * 4. A locked account is refused, and the failed count is left alone.
  * 5. A deactivated account is refused.
- * 6. A role that does not match the tab is refused, unless the account is
- *    an admin, who may sign in from either tab.
+ * 6. An entry point that does not match the account's real role is refused
+ *    and counted as a failed attempt.
  * 7. Five consecutive failures lock the account for fifteen minutes.
  * 8. A success resets the counter, records the time and is audited.
  *
@@ -222,22 +237,46 @@ export async function authenticateCredentials(
     return refuse("wrong_password");
   }
 
-  // The tab is a hint. An admin may sign in from either tab; anyone else
-  // has to use the tab that matches their real role.
-  if (user.role !== "ADMIN") {
-    const expected = user.role === "STUDENT" ? "student" : "teacher";
+  // The entry point has to match the account's real role: a student signs in
+  // from the student tab, a teacher from the teacher tab and an admin from
+  // the admin sign-in page. Nothing else is accepted.
+  //
+  // The password has already been compared at this point, so a mismatch
+  // takes the same time as a wrong password, and it is counted as a failed
+  // attempt so the lockout cannot be walked around by using the wrong tab.
+  if (user.role !== ROLE_FOR_ENTRY[role]) {
+    const failedLoginCount = user.failedLoginCount + 1;
+    const locked = failedLoginCount >= MAX_FAILED_LOGINS;
 
-    if (role !== expected) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginCount,
+        lockedUntil: locked
+          ? new Date(now.getTime() + LOCKOUT_MINUTES * 60 * 1000)
+          : user.lockedUntil,
+      },
+    });
+
+    await writeAudit({
+      actorId: user.id,
+      action: "Login failed",
+      entityType: "Account",
+      entityId: user.loginId,
+      metadata: { reason: "role_mismatch" },
+    });
+
+    if (locked) {
       await writeAudit({
         actorId: user.id,
-        action: "Login refused",
+        action: "Account locked",
         entityType: "Account",
         entityId: user.loginId,
-        metadata: { reason: "role_mismatch" },
+        metadata: { minutes: LOCKOUT_MINUTES },
       });
-
-      return refuse("role_mismatch");
     }
+
+    return refuse("role_mismatch");
   }
 
   await prisma.user.update({
@@ -393,6 +432,34 @@ export async function changePassword(
     entityType: "Account",
     entityId: userId,
   });
+}
+
+/**
+ * The session claims of an account, read from the database.
+ *
+ * The session cookie is signed, so it cannot be edited, but it can go stale:
+ * a password change clears the "must change" flag and moves the session
+ * version on. The claims are read from the row again so the session that is
+ * re-issued carries what the row actually says.
+ *
+ * Nothing sent by the browser is trusted here: the claims come from the row
+ * that belongs to the id on the token.
+ */
+export async function readSessionClaims(userId: string): Promise<{
+  mustChangePassword: boolean;
+  sessionVersion: number;
+} | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { mustChangePassword: true, sessionVersion: true },
+  });
+
+  if (!user) return null;
+
+  return {
+    mustChangePassword: user.mustChangePassword,
+    sessionVersion: user.sessionVersion,
+  };
 }
 
 /**

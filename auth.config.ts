@@ -9,6 +9,10 @@ import { SESSION_MAX_AGE } from "@/server/auth-types";
  * Prisma, no bcrypt — because the middleware runs on the edge. The
  * credentials provider itself lives in `auth.ts`, which the middleware never
  * imports.
+ *
+ * The `jwt` callback is edge-safe too, so it cannot read the row itself.
+ * `auth.ts` overrides it with the version that can, and that is the one the
+ * server uses.
  */
 export const authConfig = {
   pages: {
@@ -32,6 +36,13 @@ export const authConfig = {
      *
      * The portal the user belongs to is recorded on the token here, because
      * the sign-in callback runs before the token exists.
+     *
+     * The "update" trigger is the session refresh that follows a password
+     * change. The claims have to be read from the row again, because the
+     * password change clears the "must change" flag and moves the session
+     * version on; a token that kept the old claims would send the user back
+     * to the password page. The edge-safe version of this callback cannot
+     * reach the database, so `auth.ts` replaces it with one that can.
      */
     jwt({ token, user }) {
       if (user) {

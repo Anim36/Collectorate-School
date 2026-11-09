@@ -29,6 +29,7 @@ const prisma = new PrismaClient({
 
 const PASSWORD = "Logout-Test-Pass-2026!";
 const LOGIN_ID = "logout-test-student-01";
+const ADMIN_LOGIN_ID = "logout-test-admin-01";
 
 const results: { name: string; pass: boolean; detail: string }[] = [];
 
@@ -171,7 +172,62 @@ async function main(): Promise<void> {
     `${audits.length} rows`,
   );
 
+  /* --- 5. An admin is sent to the admin sign-in page. -------------------- */
+
+  await createAdminAccount();
+
+  await browser.send("Network.clearBrowserCookies");
+  await browser.send("Page.navigate", { url: `${BASE_URL}/admin/login` });
+  await sleep(3000);
+
+  const adminSignedIn = await browser.evaluate(
+    `(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      ${SET_VALUE_HELPER}
+
+      const id = document.querySelector('input[name="identifier"]');
+      const pw = document.querySelector('input[name="password"]');
+      if (!id || !pw) return { url: 'no fields' };
+
+      setValue(id, ${JSON.stringify(ADMIN_LOGIN_ID)});
+      setValue(pw, ${JSON.stringify(PASSWORD)});
+      await sleep(300);
+
+      document.querySelector('button[type="submit"]').click();
+      await sleep(4000);
+
+      return { url: location.pathname };
+    })()`,
+  );
+
+  check(
+    "the admin signs in and reaches the admin portal",
+    text(adminSignedIn, "url").includes("/admin"),
+    JSON.stringify(adminSignedIn),
+  );
+
+  const adminSignedOut = await browser.evaluate(
+    `(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      const button = document.querySelector('[data-portal="logout"]');
+      if (!button) return { url: 'no logout button' };
+
+      button.click();
+      await sleep(4000);
+
+      return { url: location.pathname };
+    })()`,
+  );
+
+  check(
+    "the admin sign-out sends the user to /admin/login",
+    text(adminSignedOut, "url") === "/admin/login",
+    JSON.stringify(adminSignedOut),
+  );
+
   await removeTestAccount();
+  await removeAdminAccount();
   await prisma.$disconnect();
   browser.close();
 
@@ -222,6 +278,45 @@ async function createTestAccount(): Promise<void> {
 async function removeTestAccount(): Promise<void> {
   await prisma.auditLog.deleteMany({ where: { entityId: LOGIN_ID } });
   await prisma.user.deleteMany({ where: { loginId: LOGIN_ID } });
+}
+
+/**
+ * Creates the admin account the sign-out check acts as.
+ */
+async function createAdminAccount(): Promise<void> {
+  const passwordHash = await bcrypt.hash(PASSWORD, 12);
+
+  await prisma.user.upsert({
+    where: { loginIdNormalized: ADMIN_LOGIN_ID.toLowerCase() },
+    update: {
+      loginId: ADMIN_LOGIN_ID,
+      passwordHash,
+      role: "ADMIN",
+      isActive: true,
+      failedLoginCount: 0,
+      lockedUntil: null,
+      sessionVersion: 0,
+      mustChangePassword: false,
+    },
+    create: {
+      id: ADMIN_LOGIN_ID,
+      loginId: ADMIN_LOGIN_ID,
+      loginIdNormalized: ADMIN_LOGIN_ID.toLowerCase(),
+      name: "Logout Test Admin",
+      email: `${ADMIN_LOGIN_ID}@example.com`,
+      passwordHash,
+      role: "ADMIN",
+      mustChangePassword: false,
+    },
+  });
+}
+
+/**
+ * Removes the admin account and the rows it left behind.
+ */
+async function removeAdminAccount(): Promise<void> {
+  await prisma.auditLog.deleteMany({ where: { entityId: ADMIN_LOGIN_ID } });
+  await prisma.user.deleteMany({ where: { loginId: ADMIN_LOGIN_ID } });
 }
 
 void main();

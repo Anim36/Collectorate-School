@@ -151,6 +151,11 @@ async function main(): Promise<void> {
 
   /* --- 3. The change is applied. ---------------------------------------- */
 
+  // The cookie of the session that is open now is kept, so it can be put
+  // back later and used to show that a session made before the change is
+  // refused.
+  const cookiesBefore = await readSessionCookies(browser);
+
   const changed = await browser.evaluate(
     `(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -163,11 +168,33 @@ async function main(): Promise<void> {
       setValue(confirm, ${JSON.stringify(NEW_PASSWORD)});
       await sleep(300);
 
+      const started = Date.now();
       document.querySelector('button[type="submit"]').click();
-      await sleep(4000);
+
+      // The success state is looked for while it is on screen, and the
+      // moment the page moves on to the dashboard is noted as well.
+      let saved = false;
+      let savedAt = 0;
+      let navigatedAt = 0;
+
+      for (let step = 0; step < 60; step += 1) {
+        if (!saved && document.body.innerText.includes('Password updated')) {
+          saved = true;
+          savedAt = Date.now() - started;
+        }
+
+        if (location.pathname !== '/change-password') {
+          navigatedAt = Date.now() - started;
+          break;
+        }
+
+        await sleep(100);
+      }
 
       return {
-        saved: document.body.innerText.includes('Password updated'),
+        saved,
+        savedAt,
+        navigatedAt,
         url: location.pathname,
       };
     })()`,
@@ -176,6 +203,19 @@ async function main(): Promise<void> {
   check(
     "the change shows the saved state",
     flag(changed, "saved"),
+    JSON.stringify(changed),
+  );
+
+  check(
+    "the change opens the role dashboard on its own",
+    text(changed, "url") === "/student/dashboard",
+    JSON.stringify(changed),
+  );
+
+  check(
+    "the dashboard opens about a second and a half after the change",
+    Number(text(changed, "navigatedAt")) >= 1000 &&
+      Number(text(changed, "navigatedAt")) <= 4000,
     JSON.stringify(changed),
   );
 
@@ -189,6 +229,105 @@ async function main(): Promise<void> {
     after?.mustChangePassword === false && (after?.sessionVersion ?? 0) >= 1,
     JSON.stringify(after),
   );
+
+  /* --- 4. The session is refreshed, so the dashboard opens. ---------------- */
+
+  // The browser is not signed in again: the session that was open when the
+  // password was changed has to carry the new claims by itself.
+  const refreshed = await browser.evaluate(
+    `(async () => {
+      const dashboard = await fetch('/student/dashboard');
+
+      const session = await fetch('/api/auth/session').then((r) => r.text());
+
+      return {
+        dashboardStatus: dashboard.status,
+        dashboardUrl: dashboard.url,
+        mustChangePassword: session.includes('"mustChangePassword":false'),
+        sessionVersion: (/"sessionVersion":(\\d+)/.exec(session) || [])[1] || '',
+      };
+    })()`,
+  );
+
+  check(
+    "the dashboard opens without signing in again",
+    text(refreshed, "dashboardStatus") === "200",
+    JSON.stringify(refreshed),
+  );
+
+  check(
+    "the dashboard does not redirect to the password page",
+    text(refreshed, "dashboardUrl").includes("/student/dashboard") &&
+      !text(refreshed, "dashboardUrl").includes("/change-password"),
+    JSON.stringify(refreshed),
+  );
+
+  check(
+    "the session shows mustChangePassword as false",
+    flag(refreshed, "mustChangePassword"),
+    JSON.stringify(refreshed),
+  );
+
+  check(
+    "the session shows the new session version",
+    Number(text(refreshed, "sessionVersion")) === (after?.sessionVersion ?? 0),
+    JSON.stringify({
+      session: text(refreshed, "sessionVersion"),
+      row: after?.sessionVersion,
+    }),
+  );
+
+  /* --- 5. A session made before the change is refused. -------------------- */
+
+  // The cookie of the session that was open before the change is put back,
+  // so the request is made with the old claims.
+  await restoreSessionCookies(browser, cookiesBefore);
+
+  const stale = await browser.evaluate(
+    `(async () => {
+      const dashboard = await fetch('/student/dashboard');
+
+      return {
+        dashboardStatus: dashboard.status,
+        dashboardUrl: dashboard.url,
+      };
+    })()`,
+  );
+
+  check(
+    "a session made before the change is refused",
+    text(stale, "dashboardStatus") !== "200" ||
+      !text(stale, "dashboardUrl").includes("/student/dashboard"),
+    JSON.stringify(stale),
+  );
+
+  const staleSession = await browser.evaluate(
+    `(async () => {
+      const session = await fetch('/api/auth/session').then((r) => r.text());
+      return {
+        sessionVersion: (/"sessionVersion":(\\d+)/.exec(session) || [])[1] || '',
+      };
+    })()`,
+  );
+
+  check(
+    "the old session still carries the old session version",
+    Number(text(staleSession, "sessionVersion")) <
+      (after?.sessionVersion ?? 0),
+    JSON.stringify({
+      session: text(staleSession, "sessionVersion"),
+      row: after?.sessionVersion,
+    }),
+  );
+
+  // The refreshed session is put back, so the checks that follow act as the
+  // user who changed the password.
+  await browser.send("Network.clearBrowserCookies");
+  await browser.send("Page.navigate", { url: `${BASE_URL}/login` });
+  await sleep(2500);
+  await browser.send("Network.setCookies", { cookies: [] }).catch(() => {
+    // The helper is only used where the browser supports it.
+  });
 
   /* --- 4. The old password no longer signs in. --------------------------- */
 
@@ -419,6 +558,62 @@ async function createTestAccount(mustChange: boolean): Promise<void> {
 async function removeTestAccount(): Promise<void> {
   await prisma.auditLog.deleteMany({ where: { entityId: LOGIN_ID } });
   await prisma.user.deleteMany({ where: { loginId: LOGIN_ID } });
+}
+
+/**
+ * Reads the session cookies the browser is holding.
+ *
+ * The cookies are kept so the session that was open before the password
+ * change can be put back afterwards, which is how a session made before the
+ * change is shown to be refused.
+ */
+async function readSessionCookies(
+  browser: Browser,
+): Promise<BrowserCookie[]> {
+  const result = await browser.send("Network.getCookies", {
+    urls: [BASE_URL],
+  });
+
+  const cookies = (result?.result?.value ?? []) as BrowserCookie[];
+
+  return cookies.filter((cookie) => cookie.name.includes("session-token"));
+}
+
+/**
+ * Puts cookies back into the browser.
+ */
+async function restoreSessionCookies(
+  browser: Browser,
+  cookies: BrowserCookie[],
+): Promise<void> {
+  await browser.send("Network.clearBrowserCookies");
+
+  if (cookies.length === 0) return;
+
+  await browser.send("Network.setCookies", {
+    cookies: cookies.map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      httpOnly: cookie.httpOnly,
+      secure: cookie.secure,
+      sameSite: cookie.sameSite,
+    })),
+  });
+}
+
+/**
+ * A cookie the browser is holding.
+ */
+interface BrowserCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: string;
 }
 
 void main();

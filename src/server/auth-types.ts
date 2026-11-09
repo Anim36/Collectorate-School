@@ -44,6 +44,18 @@ export const ROLE_HOME: Record<SessionRole, string> = {
 };
 
 /**
+ * The sign-in page each role is sent to when it is not signed in.
+ *
+ * An admin has a page of their own, so the admin portal never shows the
+ * student and teacher tabs.
+ */
+export const ROLE_SIGN_IN: Record<SessionRole, string> = {
+  STUDENT: "/login",
+  TEACHER: "/login",
+  ADMIN: "/admin/login",
+};
+
+/**
  * The message every failed sign-in returns.
  *
  * Unknown id, wrong password, deactivated account, locked account and a role
