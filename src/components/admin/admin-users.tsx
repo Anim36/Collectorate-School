@@ -13,14 +13,14 @@ import { useSetPortalSection } from "@/components/layout/portal-section-context"
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ADMIN_ROLE_OPTIONS,
-  ADMIN_USERS_PAGE_SIZE,
-  adminCsvPreviewRows,
-  adminGreeting,
-  adminRoster,
-  type AdminCsvRow,
-  type AdminUser,
-} from "@/data/admin";
+  commitCsvAction,
+  createUserAction,
+  listUsersAction,
+  previewCsvAction,
+  resetUserPasswordAction,
+  setUserActiveAction,
+} from "@/app/admin/actions";
+import { adminGreeting, type AdminCsvRow, type AdminUser } from "@/data/admin";
 
 /** The account a confirmation acts on. */
 type PendingAccount = {
@@ -29,6 +29,26 @@ type PendingAccount = {
   /** The account the action applies to. */
   user: AdminUser;
 };
+
+/**
+ * The page size the users table shows.
+ *
+ * Figma draws four accounts on a page, so a page holds four rows.
+ */
+const PAGE_SIZE = 4;
+
+export interface AdminUsersProps {
+  /** The accounts the server read for the first page. */
+  initialUsers: {
+    rows: AdminUser[];
+    total: number;
+    page: number;
+    pageSize: number;
+    pageCount: number;
+  } | null;
+  /** The classes of the school, for the dropdowns. */
+  classes: readonly { id: string; name: string }[];
+}
 
 /**
  * The admin users page.
@@ -44,81 +64,112 @@ type PendingAccount = {
  * - Mobile (375): 24px padding, a 111px heading, a 168px filter block, a 112px
  *   action row and a 661px table.
  *
- * Everything happens in memory: the search, the role filter, the pagination,
- * the new accounts, the status changes and the password resets are held in the
- * page state and never leave the browser.
+ * The search, the filters and the pagination run on the server, so the count
+ * in "Showing X of Y" is the number of accounts that really match.
  */
-export function AdminUsers() {
+export function AdminUsers({ initialUsers, classes }: AdminUsersProps) {
   const { toast } = useToast();
 
   const [accounts, setAccounts] = React.useState<readonly AdminUser[]>(
-    adminRoster,
+    initialUsers?.rows ?? [],
   );
+  const [total, setTotal] = React.useState(initialUsers?.total ?? 0);
   const [query, setQuery] = React.useState("");
-  const [role, setRole] = React.useState<string>(ADMIN_ROLE_OPTIONS[0]);
+  const [role, setRole] = React.useState("All roles");
+  const [status, setStatus] = React.useState("All statuses");
   const [page, setPage] = React.useState(0);
   const [addUserOpen, setAddUserOpen] = React.useState(false);
   const [csvOpen, setCsvOpen] = React.useState(false);
-  const [csvRows, setCsvRows] = React.useState<readonly AdminCsvRow[]>(
-    adminCsvPreviewRows,
-  );
-  const [csvFileName, setCsvFileName] = React.useState(
-    "students-class-9.csv",
-  );
+  const [csvRows, setCsvRows] = React.useState<readonly AdminCsvRow[]>([]);
+  const [csvFileName, setCsvFileName] = React.useState("");
+  const [csvFile, setCsvFile] = React.useState<{
+    name: string;
+    text: string;
+    size: number;
+  } | null>(null);
+  const [csvReady, setCsvReady] = React.useState(0);
+  const [csvFailed, setCsvFailed] = React.useState(0);
+  const [csvWarning, setCsvWarning] = React.useState("");
+  const [importing, setImporting] = React.useState(false);
   const [pending, setPending] = React.useState<PendingAccount | null>(null);
 
   // The top bar names the section, as Figma draws it: "Admin Panel / CSV
   // import" above the import panel.
   useSetPortalSection(csvOpen ? "CSV import" : null);
 
-  const filtered = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  /**
+   * Reads a page of accounts from the server.
+   *
+   * The search is debounced, so a slow typist does not ask for a page on
+   * every keystroke.
+   */
+  const load = React.useCallback(
+    async (nextPage: number) => {
+      const result = await listUsersAction({
+        query,
+        role: role === "All roles" ? "ALL" : role.toUpperCase(),
+        status:
+          status === "All statuses"
+            ? "ALL"
+            : status === "Active"
+              ? "ACTIVE"
+              : "INACTIVE",
+        page: nextPage,
+        pageSize: PAGE_SIZE,
+      });
 
-    return accounts.filter((account) => {
-      const matchesRole = role === ADMIN_ROLE_OPTIONS[0] || account.role === role;
-      if (!matchesRole) return false;
-      if (needle === "") return true;
+      if (!result.ok) {
+        toast({
+          title: "Could not load the accounts",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
 
-      return (
-        account.name.toLowerCase().includes(needle) ||
-        account.email.toLowerCase().includes(needle) ||
-        account.id.toLowerCase().includes(needle)
-      );
-    });
-  }, [accounts, query, role]);
-
-  // A filter change starts the list again from the first page.
-  React.useEffect(() => {
-    setPage(0);
-  }, [query, role]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / ADMIN_USERS_PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount - 1);
-  const visibleAccounts = filtered.slice(
-    currentPage * ADMIN_USERS_PAGE_SIZE,
-    currentPage * ADMIN_USERS_PAGE_SIZE + ADMIN_USERS_PAGE_SIZE,
+      setAccounts(result.data.rows);
+      setTotal(result.data.total);
+    },
+    [query, role, status, toast],
   );
 
-  const createAccount = (values: {
+  // The list is read again when the filters change.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(0);
+      void load(0);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  const createAccount = async (values: {
     name: string;
     role: AdminUser["role"];
-    classOrDept: string;
+    classId: string;
     email: string;
+    password: string;
   }) => {
-    setAccounts((previous) => [
-      {
-        id: `user-new-${previous.length + 1}`,
-        name: values.name,
-        role: values.role,
-        classOrDept: values.classOrDept,
-        status: "Active",
-        email: values.email,
-      },
-      ...previous,
-    ]);
+    const result = await createUserAction({
+      name: values.name,
+      role: values.role === "Student" ? "STUDENT" : "TEACHER",
+      classId: values.classId,
+      email: values.email,
+      password: values.password,
+    });
+
+    if (!result.ok) {
+      toast({
+        title: "Account not created",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setAddUserOpen(false);
     setPage(0);
+    await load(0);
 
     toast({
       title: "Account created",
@@ -126,85 +177,132 @@ export function AdminUsers() {
     });
   };
 
-  const toggleStatus = (user: AdminUser) => {
-    setAccounts((previous) =>
-      previous.map((account) =>
-        account.id === user.id
-          ? {
-              ...account,
-              status: account.status === "Active" ? "Inactive" : "Active",
-            }
-          : account,
-      ),
-    );
+  const toggleStatus = async (user: AdminUser) => {
+    const activate = user.status === "Inactive";
+
+    const result = await setUserActiveAction(user.id, activate);
+
+    if (!result.ok) {
+      toast({
+        title: activate ? "Account not activated" : "Account not deactivated",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await load(page);
 
     toast({
-      title: user.status === "Active" ? "Account deactivated" : "Account activated",
-      description:
-        user.status === "Active"
-          ? `${user.name} can no longer sign in.`
-          : `${user.name} can sign in again.`,
+      title: activate ? "Account activated" : "Account deactivated",
+      description: activate
+        ? `${user.name} can sign in again.`
+        : `${user.name} can no longer sign in.`,
     });
   };
 
-  const resetPassword = (user: AdminUser) => {
+  const resetPassword = async (user: AdminUser) => {
+    const result = await resetUserPasswordAction(user.id);
+
+    if (!result.ok) {
+      toast({
+        title: "Password not reset",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await load(page);
+
     toast({
       title: "Password reset",
-      description: `A new temporary password was issued to ${user.name}.`,
+      description: `A new temporary password was issued to ${user.name}: ${result.data.temporaryPassword}. It is shown once.`,
     });
   };
 
-  const confirmPending = () => {
+  const confirmPending = async () => {
     if (!pending) return;
 
     if (pending.action === "reset") {
-      resetPassword(pending.user);
+      await resetPassword(pending.user);
     } else {
-      toggleStatus(pending.user);
+      await toggleStatus(pending.user);
     }
 
     setPending(null);
   };
 
   /**
-   * Reads a picked CSV in the browser and turns its rows into the preview
-   * table. Nothing is uploaded anywhere.
+   * Reads a picked CSV on the server and turns its rows into the preview
+   * table.
    */
   const pickCsv = async (file: File) => {
     setCsvFileName(file.name);
+    setCsvWarning("");
 
-    try {
-      const text = await file.text();
-      const lines = text
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line !== "");
-
-      const [header, ...body] = lines;
-      if (!header) {
-        setCsvRows(adminCsvPreviewRows);
-        return;
-      }
-
-      const parsed: AdminCsvRow[] = body.map((line, index) => {
-        const cells = line.split(",").map((cell) => cell.trim());
-        const email = cells[3] ?? "";
-
-        return {
-          row: index + 1,
-          name: cells[0] ?? "",
-          role: cells[1] === "Teacher" ? "Teacher" : "Student",
-          classOrDept: cells[2] ?? "",
-          email,
-          valid: email !== "",
-          ...(email === "" ? { problem: "Email address is missing" } : {}),
-        };
-      });
-
-      setCsvRows(parsed);
-    } catch {
-      setCsvRows(adminCsvPreviewRows);
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setCsvWarning("Only a .csv file can be imported");
+      setCsvRows([]);
+      setCsvReady(0);
+      setCsvFailed(0);
+      setCsvFile(null);
+      return;
     }
+
+    const text = await file.text();
+    const payload = { name: file.name, text, size: file.size };
+
+    const result = await previewCsvAction(payload);
+
+    if (!result.ok) {
+      setCsvWarning(result.error);
+      setCsvRows([]);
+      setCsvReady(0);
+      setCsvFailed(0);
+      setCsvFile(null);
+      return;
+    }
+
+    setCsvFile(payload);
+    setCsvRows(result.data.rows);
+    setCsvReady(result.data.ready);
+    setCsvFailed(result.data.failed);
+  };
+
+  /**
+   * Writes the rows of the file.
+   */
+  const importRows = async () => {
+    if (!csvFile) return;
+
+    setImporting(true);
+
+    const result = await commitCsvAction(csvFile);
+
+    setImporting(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Import failed",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCsvOpen(false);
+    setCsvRows([]);
+    setCsvFile(null);
+    setCsvReady(0);
+    setCsvFailed(0);
+    setPage(0);
+    await load(0);
+
+    toast({
+      title: "Import complete",
+      description: `${result.data.imported} accounts were added to the school roll.`,
+    });
   };
 
   return (
@@ -219,6 +317,8 @@ export function AdminUsers() {
         onQueryChange={setQuery}
         role={role}
         onRoleChange={setRole}
+        status={status}
+        onStatusChange={setStatus}
       />
 
       {/* The action row. */}
@@ -244,11 +344,14 @@ export function AdminUsers() {
       </div>
 
       <AdminUsersTable
-        rows={visibleAccounts}
-        totalRecords={filtered.length}
-        page={currentPage}
-        pageSize={ADMIN_USERS_PAGE_SIZE}
-        onPageChange={setPage}
+        rows={accounts}
+        totalRecords={total}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPageChange={(next) => {
+          setPage(next);
+          void load(next);
+        }}
         onResetPassword={(user) => setPending({ action: "reset", user })}
         onToggleStatus={(user) => setPending({ action: "toggle", user })}
       />
@@ -257,18 +360,18 @@ export function AdminUsers() {
         <CsvImportPanel
           rows={csvRows}
           fileName={csvFileName}
+          ready={csvReady}
+          failed={csvFailed}
+          warning={csvWarning}
+          importing={importing}
           onFilePicked={pickCsv}
-          onReview={() =>
-            toast({
-              title: "Import queued",
-              description: `${csvRows.length} rows will be added to the school roll.`,
-            })
-          }
+          onReview={importRows}
         />
       ) : null}
 
       {addUserOpen ? (
         <AddUserModal
+          classes={classes}
           onClose={() => setAddUserOpen(false)}
           onCreate={createAccount}
         />

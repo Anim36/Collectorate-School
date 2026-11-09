@@ -392,8 +392,9 @@ async function createTestAccount(mustChange: boolean): Promise<void> {
   const passwordHash = await bcrypt.hash(PASSWORD, 12);
 
   await prisma.user.upsert({
-    where: { loginId: LOGIN_ID },
+    where: { loginIdNormalized: LOGIN_ID.toLowerCase() },
     update: {
+      loginId: LOGIN_ID,
       passwordHash,
       role: "STUDENT",
       isActive: true,
@@ -405,6 +406,7 @@ async function createTestAccount(mustChange: boolean): Promise<void> {
     create: {
       id: LOGIN_ID,
       loginId: LOGIN_ID,
+      loginIdNormalized: LOGIN_ID.toLowerCase(),
       name: "Password Test Student",
       email: `${LOGIN_ID}@example.com`,
       passwordHash,

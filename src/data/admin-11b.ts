@@ -239,7 +239,7 @@ export const ADMIN_ROUTINE_SUBJECTS = [
   "ICT",
   "Religion",
   "History",
-  "PE",
+  "Physical Education",
 ] as const;
 
 /**
@@ -250,11 +250,38 @@ export const ADMIN_ROUTINE_SUBJECTS = [
  * carry on the same subjects so a period can always be assigned.
  */
 export const adminRoutine: Record<AdminRoutineDay, readonly string[]> = {
-  Sun: ["Bangla", "English", "Math", "Science", "ICT", "Religion", "History", "PE"],
+  Sun: [
+    "Bangla",
+    "English",
+    "Math",
+    "Science",
+    "ICT",
+    "Religion",
+    "History",
+    "Physical Education",
+  ],
   Mon: ["English", "Math", "Bangla", "Science", "History", "ICT", "Religion", "Arts"],
-  Tue: ["Math", "Science", "English", "Bangla", "Religion", "History", "ICT", "PE"],
+  Tue: [
+    "Math",
+    "Science",
+    "English",
+    "Bangla",
+    "Religion",
+    "History",
+    "ICT",
+    "Physical Education",
+  ],
   Wed: ["Science", "Bangla", "Math", "English", "ICT", "Religion", "Arts", "History"],
-  Thu: ["Bangla", "English", "Science", "Math", "History", "ICT", "PE", "Library"],
+  Thu: [
+    "Bangla",
+    "English",
+    "Science",
+    "Math",
+    "History",
+    "ICT",
+    "Physical Education",
+    "Library",
+  ],
 };
 
 /** The classes the routine is available for. */

@@ -20,7 +20,9 @@
     "qa:auth": "tsx scripts/qa/check-auth-service.ts",
     "qa:auth-routes": "tsx scripts/qa/check-auth-routes.ts",
     "qa:auth-password": "tsx scripts/qa/check-auth-password.ts",
-    "qa:auth-logout": "tsx scripts/qa/check-auth-logout.ts"
+    "qa:auth-logout": "tsx scripts/qa/check-auth-logout.ts",
+    "qa:admin": "tsx scripts/qa/check-admin-api.ts",
+    "qa:admin-roles": "tsx scripts/qa/check-admin-roles.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

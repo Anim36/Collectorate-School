@@ -132,7 +132,11 @@ export async function authenticateCredentials(
 
   const { loginId, password, role } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { loginId } });
+  // The account is looked up by the normalised login id, so "Admin" and
+  // "admin" are the same account.
+  const user = await prisma.user.findUnique({
+    where: { loginIdNormalized: loginId.trim().toLowerCase() },
+  });
 
   // The comparison always runs, so a sign-in takes the same time whether the
   // account exists or not.

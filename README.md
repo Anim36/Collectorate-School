@@ -42,6 +42,12 @@ The dev server runs on <http://localhost:3000>.
 | `npm run db:studio` | Opens Prisma Studio. |
 | `npm run db:check` | Reads a few tables to prove the client reaches PostgreSQL. |
 | `npm run db:counts` | Prints the row count of every seeded table. |
+| `npm run qa:auth` | The credentials check, the lockout and the audit trail. |
+| `npm run qa:auth-routes` | The route protection: who reaches which portal. |
+| `npm run qa:auth-password` | The change-password form, driven in the debug browser. |
+| `npm run qa:auth-logout` | The sign-out control, driven in the debug browser. |
+| `npm run qa:admin` | The admin services: the accounts, the classes, the subjects and the CSV import. |
+| `npm run qa:admin-roles` | The admin server actions over HTTP: an admin may run them, nobody else may. |
 
 ### Environment
 

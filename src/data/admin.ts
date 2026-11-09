@@ -20,7 +20,7 @@ export interface AdminUser {
   /** Role of the account. */
   readonly role: AdminUserRole;
   /**
-   * Class and section for a student, the teaching department for a teacher.
+   * The class of a student, the teaching department of a teacher.
    * Empty when the account has neither.
    */
   readonly classOrDept: string;
@@ -31,13 +31,18 @@ export interface AdminUser {
 }
 
 /** The roles an account can hold. */
-export type AdminUserRole = "Student" | "Teacher";
+export type AdminUserRole = "Student" | "Teacher" | "Admin";
 
 /** The sign-in state of an account. */
 export type AdminUserStatus = "Active" | "Inactive";
 
 /** The options of the role filter, in the order Figma lists them. */
-export const ADMIN_ROLE_OPTIONS = ["All roles", "Student", "Teacher"] as const;
+export const ADMIN_ROLE_OPTIONS = [
+  "All roles",
+  "Student",
+  "Teacher",
+  "Admin",
+] as const;
 
 /** The metric cards of the dashboard. */
 export interface AdminMetric {
@@ -208,94 +213,18 @@ export const ADMIN_TOTAL_USERS = 1560;
 /** The number of records held on one page of the users table. */
 export const ADMIN_USERS_PAGE_SIZE = 4;
 
-/** The classes a student can be placed in. */
-export interface AdminClassOption {
-  /** Identifier of the class. */
-  readonly id: string;
-  /** Label of the class, e.g. "Class 9". */
-  readonly label: string;
-  /** Sections the class runs. */
-  readonly sections: readonly string[];
-}
-
-/** The classes of the school, used by the add-user and class forms. */
-export const adminClasses: readonly AdminClassOption[] = [
-  { id: "class-6", label: "Class 6", sections: ["A", "B", "C"] },
-  { id: "class-7", label: "Class 7", sections: ["A", "B", "C"] },
-  { id: "class-8", label: "Class 8", sections: ["A", "B", "C"] },
-  { id: "class-9", label: "Class 9", sections: ["A", "B", "C"] },
-  { id: "class-10", label: "Class 10", sections: ["A", "B", "C"] },
-];
-
-/** The label of a class and section pair, e.g. "Class 9 · A". */
-export function adminClassSectionLabel(
-  classId: string,
-  section: string,
-): string {
-  const classOption = adminClasses.find((item) => item.id === classId);
-  return `${classOption?.label ?? classId} · ${section}`;
-}
-
-/** The teaching departments of the school. */
+/**
+ * The teaching departments of the school.
+ *
+ * The class list is not here: the classes come from the database, so the
+ * dropdowns always hold the classes the school actually has.
+ */
 export const adminDepartments: readonly string[] = [
   "Science",
   "Mathematics",
   "English",
   "Bangla",
   "Social Science",
-];
-
-/** A class of the school. */
-export interface AdminClass {
-  /** Stable identifier of the class. */
-  readonly id: string;
-  /** Name of the class, e.g. "Class 6". */
-  readonly name: string;
-  /** Sections the class runs. */
-  readonly sections: readonly string[];
-  /** Number of students in the class. */
-  readonly students: number;
-  /** The teacher in charge of the class. */
-  readonly classTeacher: string;
-}
-
-/** The classes of the school. */
-export const adminClassRows: readonly AdminClass[] = [
-  {
-    id: "class-6",
-    name: "Class 6",
-    sections: ["A", "B", "C"],
-    students: 300,
-    classTeacher: "Farhana Akter",
-  },
-  {
-    id: "class-7",
-    name: "Class 7",
-    sections: ["A", "B", "C"],
-    students: 300,
-    classTeacher: "Shamim Ahmed",
-  },
-  {
-    id: "class-8",
-    name: "Class 8",
-    sections: ["A", "B", "C"],
-    students: 300,
-    classTeacher: "Sadia Islam",
-  },
-  {
-    id: "class-9",
-    name: "Class 9",
-    sections: ["A", "B", "C"],
-    students: 300,
-    classTeacher: "Nusrat Jahan",
-  },
-  {
-    id: "class-10",
-    name: "Class 10",
-    sections: ["A", "B", "C"],
-    students: 300,
-    classTeacher: "Rafiq Hasan",
-  },
 ];
 
 /** A subject and the teacher who takes it. */
@@ -359,7 +288,7 @@ export interface AdminCsvRow {
   readonly name: string;
   /** Role of the account. */
   readonly role: AdminUserRole;
-  /** Class and section of the account. */
+  /** Class of the account. */
   readonly classOrDept: string;
   /** Email address of the account. */
   readonly email: string;
@@ -475,6 +404,9 @@ export const ADMIN_PASSWORD_MIN_LENGTH = 12;
  * (2:10154–2:10172). The rest of the roll is generated so the pagination and
  * the filters work on a realistic number of accounts: 1,500 students and 60
  * teachers, which is the 1,560 the Figma footer counts.
+ *
+ * The roster is no longer drawn: the users table reads the accounts from the
+ * database, so the real roll is what it shows.
  */
 const ROSTER_FIRST_NAMES = [
   "Arif",
@@ -549,7 +481,13 @@ const ROSTER_LAST_NAMES = [
 const ROSTER_CLASS_NUMBERS = [6, 7, 8, 9, 10] as const;
 const ROSTER_SECTIONS = ["A", "B", "C"] as const;
 
-/** Builds the account the roster holds at a given index. */
+/**
+ * Builds the account the roster holds at a given index.
+ *
+ * The roster is not drawn by the pages any more — the users table reads the
+ * accounts from the database — so this is only kept for the design-system
+ * page, which still shows the shape of a long roll.
+ */
 function buildRosterUser(index: number): AdminUser {
   // Every twenty-seventh generated account is a teacher, so the roll holds
   // 58 generated teachers beside the two Figma draws.
@@ -584,16 +522,3 @@ export const adminRoster: readonly AdminUser[] = [
     buildRosterUser(offset + adminUsers.length),
   ),
 ];
-
-/** The class and section options offered by the add-user form. */
-export const adminClassSectionOptions: readonly string[] = adminClasses.flatMap(
-  (classOption) =>
-    classOption.sections.map(
-      (section) => `${classOption.label} · ${section}`,
-    ),
-);
-
-/** The class of a "Class 9 · A" style label, e.g. "Class 9". */
-export function adminClassNameOf(label: string): string {
-  return label.split(" · ")[0] ?? label;
-}

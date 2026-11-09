@@ -115,6 +115,24 @@ step 12 audits.
 | `scripts/qa/script-headers.mjs` | Prints the header of every script. |
 | `scripts/qa/script-refs.mjs` | Lists the cross-script references. |
 
+## The backend checks
+
+These run against the real PostgreSQL database and clean up after themselves,
+so they can be run again without changing the school.
+
+| Script | What it does |
+| --- | --- |
+| `npm run qa:auth` | The credentials check, the lockout and the audit trail. |
+| `npm run qa:auth-routes` | The route protection: who reaches which portal. |
+| `npm run qa:auth-password` | The change-password form, driven in the debug browser. |
+| `npm run qa:auth-logout` | The sign-out control, driven in the debug browser. |
+| `npm run qa:admin` | The admin services: the accounts, the classes, the subjects, the allocations and the CSV import. |
+| `npm run qa:admin-roles` | The admin server actions over HTTP: an admin may run them, nobody else may. |
+
+`npm run qa:auth-password` and `npm run qa:auth-logout` drive the debug
+browser, so it has to be up. `npm run qa:admin-roles` talks to the server on
+port 3111, so a build has to be running there.
+
 The rest of `scripts/qa/` are the single-purpose probes: `measure-*.mjs`
 prints the geometry of a page, `inspect-*.mjs` prints the computed style of an
 element, `dump-*.mjs` prints the markup of a Figma node, and `extract-*.mjs`

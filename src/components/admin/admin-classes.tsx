@@ -10,12 +10,49 @@ import { PortalTable } from "@/components/shared/portal-table";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
-  adminClassRows,
-  adminGreeting,
-  adminSubjectAllocations,
-  type AdminClass,
-  type AdminSubjectAllocation,
-} from "@/data/admin";
+  assignSubjectAction,
+  saveClassAction,
+} from "@/app/admin/actions";
+import { adminGreeting } from "@/data/admin";
+
+export interface AdminClassesProps {
+  /** The classes the server read. */
+  initialClasses: readonly {
+    id: string;
+    name: string;
+    sortOrder: number;
+    gradingMode: "GPA" | "GRADE_ONLY";
+    students: number;
+    classTeacher: string;
+    subjectCount: number;
+  }[];
+  /** How many pages of classes there are. */
+  classPageCount: number;
+  /** The subject allocations the server read. */
+  initialAllocations: readonly {
+    id: string;
+    subject: string;
+    teacher: string;
+    className: string;
+  }[];
+  /** How many pages of allocations there are. */
+  allocationPageCount: number;
+  /** The subjects of the school. */
+  subjects: readonly { id: string; name: string }[];
+  /** The teachers that can be picked. */
+  teachers: readonly { id: string; name: string }[];
+  /** The classes, for the dropdowns. */
+  classOptions: readonly { id: string; name: string }[];
+}
+
+/**
+ * The page sizes the tables show.
+ *
+ * Figma draws five classes and three allocations on a page, so a page holds
+ * that many rows.
+ */
+const CLASS_PAGE_SIZE = 5;
+const ALLOCATION_PAGE_SIZE = 3;
 
 /**
  * The admin classes page.
@@ -31,57 +68,68 @@ import {
  *   classes table, the 35px heading, the 345px allocation table and the 49px
  *   action.
  *
- * Everything happens in memory: the new classes, the edited classes and the
- * new subject allocations are held in the page state.
+ * The classes, the counts and the allocations all come from the database.
  */
-export function AdminClasses() {
+export function AdminClasses({
+  initialClasses,
+  classPageCount,
+  initialAllocations,
+  allocationPageCount,
+  subjects,
+  teachers,
+  classOptions,
+}: AdminClassesProps) {
   const { toast } = useToast();
 
   // The top bar names the section, as Figma draws it: "Admin Panel / Classes
   // and Subjects", which wraps onto two lines on the tablet bar.
   useSetPortalSection("Classes and Subjects");
 
-  const [classes, setClasses] = React.useState<readonly AdminClass[]>(
-    adminClassRows,
-  );
-  const [allocations, setAllocations] = React.useState<
-    readonly AdminSubjectAllocation[]
-  >(adminSubjectAllocations);
+  const [classes, setClasses] = React.useState(initialClasses);
+  const [allocations, setAllocations] = React.useState(initialAllocations);
+  const [classPage, setClassPage] = React.useState(0);
+  const [allocationPage, setAllocationPage] = React.useState(0);
   const [classModalOpen, setClassModalOpen] = React.useState(false);
   const [subjectModalOpen, setSubjectModalOpen] = React.useState(false);
 
   const classColumns = [
-    { header: "Class", cell: (row: AdminClass) => row.name },
+    { header: "Class", cell: (row: (typeof classes)[number]) => row.name },
     {
-      header: "Sections",
-      cell: (row: AdminClass) => row.sections.join(", "),
+      header: "Students",
+      cell: (row: (typeof classes)[number]) => String(row.students),
     },
-    { header: "Students", cell: (row: AdminClass) => String(row.students) },
-    { header: "Class teacher", cell: (row: AdminClass) => row.classTeacher },
+    {
+      header: "Class teacher",
+      cell: (row: (typeof classes)[number]) => row.classTeacher,
+    },
+    {
+      header: "Subjects",
+      cell: (row: (typeof classes)[number]) => String(row.subjectCount),
+    },
   ];
 
   const classRecords = classes.map((row) => ({
     id: row.id,
     lines: [
       { label: "Class", value: row.name },
-      { label: "Sections", value: row.sections.join(", ") },
       { label: "Students", value: String(row.students) },
       { label: "Class teacher", value: row.classTeacher },
+      { label: "Subjects", value: String(row.subjectCount) },
     ],
   }));
 
   const allocationColumns = [
     {
       header: "Subject",
-      cell: (row: AdminSubjectAllocation) => row.subject,
+      cell: (row: (typeof allocations)[number]) => row.subject,
     },
     {
       header: "Teacher",
-      cell: (row: AdminSubjectAllocation) => row.teacher,
+      cell: (row: (typeof allocations)[number]) => row.teacher,
     },
     {
-      header: "Classes",
-      cell: (row: AdminSubjectAllocation) => row.classes,
+      header: "Class",
+      cell: (row: (typeof allocations)[number]) => row.className,
     },
   ];
 
@@ -90,55 +138,92 @@ export function AdminClasses() {
     lines: [
       { label: "Subject", value: row.subject },
       { label: "Teacher", value: row.teacher },
-      { label: "Classes", value: row.classes },
+      { label: "Class", value: row.className },
     ],
   }));
 
-  const saveClass = (values: {
+  /**
+   * Reads a page of classes and a page of allocations again.
+   */
+  const reload = React.useCallback(
+    async (nextClassPage: number, nextAllocationPage: number) => {
+      const { listAllocationsAction, listClassesAction } = await import(
+        "@/app/admin/actions"
+      );
+
+      const [nextClasses, nextAllocations] = await Promise.all([
+        listClassesAction(nextClassPage, CLASS_PAGE_SIZE),
+        listAllocationsAction(nextAllocationPage, ALLOCATION_PAGE_SIZE),
+      ]);
+
+      if (nextClasses.ok) setClasses(nextClasses.data.rows);
+      if (nextAllocations.ok) setAllocations(nextAllocations.data.rows);
+    },
+    [],
+  );
+
+  const saveClass = async (values: {
+    id?: string;
     name: string;
-    sections: string[];
-    students: number;
-    classTeacher: string;
+    sortOrder: number;
+    gradingMode: "GPA" | "GRADE_ONLY";
+    classTeacherId: string;
   }) => {
-    setClasses((previous) => [
-      ...previous,
-      {
-        id: `class-${previous.length + 1}`,
-        name: values.name,
-        sections: values.sections,
-        students: values.students,
-        classTeacher: values.classTeacher,
-      },
-    ]);
+    const result = await saveClassAction({
+      id: values.id,
+      name: values.name,
+      sortOrder: values.sortOrder,
+      gradingMode: values.gradingMode,
+      classTeacherId: values.classTeacherId,
+    });
+
+    if (!result.ok) {
+      toast({
+        title: "Class not saved",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setClassModalOpen(false);
+    await reload(classPage, allocationPage);
 
     toast({
       title: "Class saved",
-      description: `${values.name} now runs ${values.sections.length} section(s).`,
+      description: `${values.name} is now part of the school.`,
     });
   };
 
-  const saveSubject = (values: {
-    subject: string;
-    teacher: string;
-    classes: string;
+  const saveSubject = async (values: {
+    subjectId: string;
+    teacherId: string;
+    classId: string;
+    subjectName: string;
+    teacherName: string;
+    className: string;
   }) => {
-    setAllocations((previous) => [
-      ...previous,
-      {
-        id: `subject-${previous.length + 1}`,
-        subject: values.subject,
-        teacher: values.teacher,
-        classes: values.classes,
-      },
-    ]);
+    const result = await assignSubjectAction({
+      classId: values.classId,
+      subjectId: values.subjectId,
+      teacherId: values.teacherId,
+    });
+
+    if (!result.ok) {
+      toast({
+        title: "Subject not assigned",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setSubjectModalOpen(false);
+    await reload(classPage, allocationPage);
 
     toast({
       title: "Subject assigned",
-      description: `${values.subject} is now taught by ${values.teacher}.`,
+      description: `${values.subjectName} is now taught by ${values.teacherName} in ${values.className}.`,
     });
   };
 
@@ -163,7 +248,18 @@ export function AdminClasses() {
         rows={classes}
         mobileRecords={classRecords}
         mobileRecordSize="uniform"
-        footer={<AdminTableFooter records={classes.length} />}
+        footer={
+          <AdminTableFooter
+            records={classes.length}
+            page={classPage}
+            pageCount={classPageCount}
+            onPageChange={(next) => {
+              setClassPage(next);
+              void reload(next, allocationPage);
+            }}
+            compact
+          />
+        }
       />
 
       <h3 className="text-title font-bold leading-[1.45] text-ink">
@@ -176,7 +272,18 @@ export function AdminClasses() {
         rows={allocations}
         mobileRecords={allocationRecords}
         mobileRecordSize="uniform"
-        footer={<AdminTableFooter records={allocations.length} />}
+        footer={
+          <AdminTableFooter
+            records={allocations.length}
+            page={allocationPage}
+            pageCount={allocationPageCount}
+            onPageChange={(next) => {
+              setAllocationPage(next);
+              void reload(classPage, next);
+            }}
+            compact
+          />
+        }
       />
 
       <Button
@@ -189,6 +296,8 @@ export function AdminClasses() {
 
       {classModalOpen ? (
         <ClassModal
+          classes={classes}
+          teachers={teachers}
           onClose={() => setClassModalOpen(false)}
           onSave={saveClass}
         />
@@ -196,6 +305,9 @@ export function AdminClasses() {
 
       {subjectModalOpen ? (
         <SubjectModal
+          subjects={subjects}
+          teachers={teachers}
+          classes={classOptions}
           onClose={() => setSubjectModalOpen(false)}
           onSave={saveSubject}
         />

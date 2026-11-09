@@ -10,6 +10,70 @@ import { SEED_CLASSES } from "./classes";
 import { SEED_DEMO_DATA } from "./demo";
 import { isoDate, isoDateTime, isoDateTimeSeconds, poisha, slug, upsertInChunks } from "./helpers";
 
+/* --------------------------------------------------------------- subjects --- */
+
+/**
+ * Merges the old "PE" subject into "Physical Education".
+ *
+ * The school has one subject for it, called "Physical Education". A database
+ * seeded before that rename still holds a "PE" row, so the rows that point at
+ * it are moved across and the old row is removed.
+ */
+export async function mergeLegacyPeSubject(
+  prisma: PrismaClient,
+  subjectIds: Map<string, string>,
+): Promise<void> {
+  const legacy = await prisma.subject.findUnique({ where: { name: "PE" } });
+  const targetId = subjectIds.get("Physical Education");
+
+  if (!legacy || !targetId || legacy.id === targetId) return;
+
+  await prisma.$transaction(async (tx) => {
+    // The allocations move across. A class that already has the subject
+    // keeps the row it has, so the old one is removed instead.
+    const allocations = await tx.classSubject.findMany({
+      where: { subjectId: legacy.id },
+    });
+
+    for (const allocation of allocations) {
+      const existing = await tx.classSubject.findUnique({
+        where: {
+          classId_subjectId: {
+            classId: allocation.classId,
+            subjectId: targetId,
+          },
+        },
+      });
+
+      if (existing) {
+        await tx.classSubject.delete({ where: { id: allocation.id } });
+      } else {
+        await tx.classSubject.update({
+          where: { id: allocation.id },
+          data: { subjectId: targetId },
+        });
+      }
+    }
+
+    await tx.examResult.updateMany({
+      where: { subjectId: legacy.id },
+      data: { subjectId: targetId },
+    });
+
+    await tx.routinePeriod.updateMany({
+      where: { subjectId: legacy.id },
+      data: { subjectId: targetId },
+    });
+
+    await tx.resultSheet.updateMany({
+      where: { subjectId: legacy.id },
+      data: { subjectId: targetId },
+    });
+
+    await tx.subject.delete({ where: { id: legacy.id } });
+  });
+}
+
 /* ------------------------------------------------------------ attendance --- */
 
 /**

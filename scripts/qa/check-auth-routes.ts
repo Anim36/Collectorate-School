@@ -57,8 +57,9 @@ async function createTestAccounts(): Promise<void> {
 
   for (const account of accounts) {
     await prisma.user.upsert({
-      where: { loginId: account.id },
+      where: { loginIdNormalized: account.id.toLowerCase() },
       update: {
+        loginId: account.id,
         passwordHash,
         role: account.role,
         isActive: account.id !== IDS.inactive,
@@ -70,6 +71,7 @@ async function createTestAccounts(): Promise<void> {
       create: {
         id: account.id,
         loginId: account.id,
+        loginIdNormalized: account.id.toLowerCase(),
         name: `Route Test ${account.role}`,
         email: `${account.id}@example.com`,
         passwordHash,

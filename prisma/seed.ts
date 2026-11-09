@@ -25,8 +25,9 @@ import {
   SEED_FAKE_STUDENT_NAMES,
 } from "./seed-data/classes";
 import { SEED_DEMO_DATA } from "./seed-data/demo";
-import { isoDate, requiredEnv, slug } from "./seed-data/helpers";
+import { isoDate, normalizeLoginId, requiredEnv, slug } from "./seed-data/helpers";
 import {
+  mergeLegacyPeSubject,
   seedAttendance,
   seedAuditLog,
   seedCalendar,
@@ -78,8 +79,9 @@ async function main(): Promise<void> {
   /* ------------------------------------------------------------- accounts --- */
 
   const admin = await prisma.user.upsert({
-    where: { loginId: adminLogin },
+    where: { loginIdNormalized: normalizeLoginId(adminLogin) },
     update: {
+      loginId: adminLogin,
       name: "School Administrator",
       role: "ADMIN",
       passwordHash: adminHash,
@@ -89,6 +91,7 @@ async function main(): Promise<void> {
     create: {
       id: "user-admin",
       loginId: adminLogin,
+      loginIdNormalized: normalizeLoginId(adminLogin),
       name: "School Administrator",
       email: "admin@school.edu.bd",
       passwordHash: adminHash,
@@ -168,6 +171,11 @@ async function main(): Promise<void> {
     subjectIds.set(name, subject.id);
   }
 
+  // "PE" and "Physical Education" are the same subject. An older database
+  // may still hold the "PE" row, so it is merged into the full name and the
+  // rows that pointed at it are moved across.
+  await mergeLegacyPeSubject(prisma, subjectIds);
+
   /* ------------------------------------------------------------- teachers --- */
 
   const teacherIds = new Map<string, string>();
@@ -177,8 +185,9 @@ async function main(): Promise<void> {
     const loginId = `teacher-${slug(teacher.name)}`;
 
     const user = await prisma.user.upsert({
-      where: { loginId },
+      where: { loginIdNormalized: normalizeLoginId(loginId) },
       update: {
+        loginId,
         name: teacher.name,
         role: "TEACHER",
         passwordHash: demoHash,
@@ -188,6 +197,7 @@ async function main(): Promise<void> {
       create: {
         id: `user-${loginId}`,
         loginId,
+        loginIdNormalized: normalizeLoginId(loginId),
         name: teacher.name,
         email: teacher.email,
         passwordHash: demoHash,
@@ -307,8 +317,9 @@ async function main(): Promise<void> {
     const loginId = student.studentId;
 
     const user = await prisma.user.upsert({
-      where: { loginId },
+      where: { loginIdNormalized: normalizeLoginId(loginId) },
       update: {
+        loginId,
         name: student.name,
         role: "STUDENT",
         passwordHash: demoHash,
@@ -318,6 +329,7 @@ async function main(): Promise<void> {
       create: {
         id: `user-${loginId}`,
         loginId,
+        loginIdNormalized: normalizeLoginId(loginId),
         name: student.name,
         email: student.email,
         passwordHash: demoHash,
@@ -382,8 +394,9 @@ async function main(): Promise<void> {
       const email = `${slug(name)}@example.com`;
 
       const user = await prisma.user.upsert({
-        where: { loginId: studentId },
+        where: { loginIdNormalized: normalizeLoginId(studentId) },
         update: {
+          loginId: studentId,
           name,
           role: "STUDENT",
           passwordHash: demoHash,
@@ -393,6 +406,7 @@ async function main(): Promise<void> {
         create: {
           id: `user-${studentId}`,
           loginId: studentId,
+          loginIdNormalized: normalizeLoginId(studentId),
           name,
           email,
           passwordHash: demoHash,

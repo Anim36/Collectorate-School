@@ -14,61 +14,71 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  adminClasses,
-  adminSubjects,
-  adminTeachers,
-} from "@/data/admin";
 
 /**
  * The class form.
  *
- * A class needs a name, its sections and the teacher in charge of it.
+ * A class needs a name, its place in the school and the teacher in charge of
+ * it. The school runs one group per class, so there is no section to pick.
  */
 const classSchema = z.object({
   name: z.string().trim().min(2, "Enter the class name"),
-  sections: z
-    .string()
-    .trim()
-    .min(1, "List at least one section"),
-  classTeacher: z.string().trim().min(1, "Pick a class teacher"),
+  sortOrder: z.coerce.number().int().min(0, "Enter the place in the school"),
+  gradingMode: z.enum(["GPA", "GRADE_ONLY"]),
+  classTeacherId: z.string().trim().min(1, "Pick a class teacher"),
 });
 
 type ClassValues = z.infer<typeof classSchema>;
 
 export interface ClassModalProps {
+  /** The classes the school has, so the next free place can be offered. */
+  classes: readonly {
+    id: string;
+    name: string;
+    sortOrder: number;
+  }[];
+  /** The teachers that can be picked. */
+  teachers: readonly { id: string; name: string }[];
   /** Called when the reader dismisses the modal. */
   onClose: () => void;
-  /** Called with the saved class or subject. */
+  /** Called with the saved class. */
   onSave: (values: {
     id?: string;
     name: string;
-    sections: string[];
-    students: number;
-    classTeacher: string;
+    sortOrder: number;
+    gradingMode: "GPA" | "GRADE_ONLY";
+    classTeacherId: string;
   }) => void;
 }
 
 /**
  * The add and edit class dialog.
- *
- * The class is only recorded in memory — nothing is sent to a server.
  */
-export function ClassModal({ onClose, onSave }: ClassModalProps) {
+export function ClassModal({
+  classes,
+  teachers,
+  onClose,
+  onSave,
+}: ClassModalProps) {
   const {
     control,
     handleSubmit,
     formState: { errors },
   } = useForm<ClassValues>({
     resolver: zodResolver(classSchema),
-    defaultValues: { name: "", sections: "A, B, C", classTeacher: "" },
+    defaultValues: {
+      name: "",
+      sortOrder: classes.length,
+      gradingMode: "GPA",
+      classTeacherId: "",
+    },
   });
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-6 md:items-center">
       <Modal
         title="Add a class"
-        description="A class runs one or more sections and has a class teacher."
+        description="A class has one group and a class teacher."
         onClose={onClose}
         className="max-w-[640px]"
         footer={
@@ -92,12 +102,9 @@ export function ClassModal({ onClose, onSave }: ClassModalProps) {
           onSubmit={handleSubmit((values) => {
             onSave({
               name: values.name.trim(),
-              sections: values.sections
-                .split(",")
-                .map((section) => section.trim())
-                .filter((section) => section !== ""),
-              students: 0,
-              classTeacher: values.classTeacher,
+              sortOrder: values.sortOrder,
+              gradingMode: values.gradingMode,
+              classTeacherId: values.classTeacherId,
             });
           })}
           className="flex w-full flex-col gap-4"
@@ -130,25 +137,57 @@ export function ClassModal({ onClose, onSave }: ClassModalProps) {
 
           <div className="flex w-full flex-col items-start">
             <span className="text-caption font-medium leading-[1.45] text-muted">
-              Sections
+              Place in the school
             </span>
             <Controller
               control={control}
-              name="sections"
+              name="sortOrder"
               render={({ field }) => (
                 <input
-                  id="admin-class-sections"
+                  id="admin-class-sort-order"
+                  type="number"
+                  min={0}
                   value={field.value}
                   onChange={field.onChange}
                   onBlur={field.onBlur}
-                  placeholder="A, B, C"
+                  placeholder="12"
                   className="mt-2 h-[49px] w-full rounded-[12px] border border-border bg-surface px-[25px] text-body leading-[1.45] text-ink outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-ring"
                 />
               )}
             />
-            {errors.sections ? (
+            {errors.sortOrder ? (
               <p className="mt-2 text-caption leading-[1.45] text-danger">
-                {errors.sections.message}
+                {errors.sortOrder.message}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex w-full flex-col items-start">
+            <span className="text-caption font-medium leading-[1.45] text-muted">
+              Grading
+            </span>
+            <Controller
+              control={control}
+              name="gradingMode"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger
+                    id="admin-class-grading"
+                    aria-label="Grading"
+                    className="mt-2 h-[49px] w-full items-center justify-between gap-2 rounded-[12px] border border-border bg-surface px-[25px] text-body leading-[1.45] text-ink shadow-none focus:outline-none focus:ring-2 focus:ring-ring [&>span]:line-clamp-1 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted [&>svg]:opacity-100"
+                  >
+                    <SelectValue placeholder="GPA" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GPA">Grade point (GPA)</SelectItem>
+                    <SelectItem value="GRADE_ONLY">Grade only</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.gradingMode ? (
+              <p className="mt-2 text-caption leading-[1.45] text-danger">
+                {errors.gradingMode.message}
               </p>
             ) : null}
           </div>
@@ -159,7 +198,7 @@ export function ClassModal({ onClose, onSave }: ClassModalProps) {
             </span>
             <Controller
               control={control}
-              name="classTeacher"
+              name="classTeacherId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
@@ -170,18 +209,18 @@ export function ClassModal({ onClose, onSave }: ClassModalProps) {
                     <SelectValue placeholder="Farhana Akter" />
                   </SelectTrigger>
                   <SelectContent>
-                    {adminTeachers.map((teacher) => (
-                      <SelectItem key={teacher} value={teacher}>
-                        {teacher}
+                    {teachers.map((teacher) => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.classTeacher ? (
+            {errors.classTeacherId ? (
               <p className="mt-2 text-caption leading-[1.45] text-danger">
-                {errors.classTeacher.message}
+                {errors.classTeacherId.message}
               </p>
             ) : null}
           </div>
@@ -194,50 +233,70 @@ export function ClassModal({ onClose, onSave }: ClassModalProps) {
 /**
  * The subject allocation form.
  *
- * A subject needs its name, the teacher who takes it and the classes it is
- * taught in.
+ * A subject needs the class it is taught in, the subject itself and the
+ * teacher who takes it.
  */
 const subjectSchema = z.object({
-  subject: z.string().trim().min(1, "Pick a subject"),
-  teacher: z.string().trim().min(1, "Pick a teacher"),
-  classes: z.string().trim().min(1, "Pick at least one class"),
+  subjectId: z.string().trim().min(1, "Pick a subject"),
+  teacherId: z.string().trim().min(1, "Pick a teacher"),
+  classId: z.string().trim().min(1, "Pick a class"),
 });
 
 type SubjectValues = z.infer<typeof subjectSchema>;
 
 export interface SubjectModalProps {
+  /** The subjects of the school. */
+  subjects: readonly { id: string; name: string }[];
+  /** The teachers that can be picked. */
+  teachers: readonly { id: string; name: string }[];
+  /** The classes of the school. */
+  classes: readonly { id: string; name: string }[];
   /** Called when the reader dismisses the modal. */
   onClose: () => void;
   /** Called with the saved allocation. */
   onSave: (values: {
-    subject: string;
-    teacher: string;
-    classes: string;
+    subjectId: string;
+    teacherId: string;
+    classId: string;
+    subjectName: string;
+    teacherName: string;
+    className: string;
   }) => void;
 }
 
 /**
  * The assign-subject dialog.
- *
- * The allocation is only recorded in memory — nothing is sent to a server.
  */
-export function SubjectModal({ onClose, onSave }: SubjectModalProps) {
+export function SubjectModal({
+  subjects,
+  teachers,
+  classes,
+  onClose,
+  onSave,
+}: SubjectModalProps) {
   const {
     control,
     handleSubmit,
     formState: { errors },
   } = useForm<SubjectValues>({
     resolver: zodResolver(subjectSchema),
-    defaultValues: { subject: "", teacher: "", classes: "" },
+    defaultValues: { subjectId: "", teacherId: "", classId: "" },
   });
 
-  const classLabels = adminClasses.map((classOption) => classOption.label);
+  const subjectName = (id: string) =>
+    subjects.find((subject) => subject.id === id)?.name ?? "";
+
+  const teacherName = (id: string) =>
+    teachers.find((teacher) => teacher.id === id)?.name ?? "";
+
+  const className = (id: string) =>
+    classes.find((classOption) => classOption.id === id)?.name ?? "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-6 md:items-center">
       <Modal
         title="Assign a subject"
-        description="A subject is taught by one teacher across a set of classes."
+        description="A subject is taught by one teacher in a class."
         onClose={onClose}
         className="max-w-[640px]"
         footer={
@@ -260,9 +319,12 @@ export function SubjectModal({ onClose, onSave }: SubjectModalProps) {
           id="admin-subject"
           onSubmit={handleSubmit((values) => {
             onSave({
-              subject: values.subject,
-              teacher: values.teacher,
-              classes: values.classes,
+              subjectId: values.subjectId,
+              teacherId: values.teacherId,
+              classId: values.classId,
+              subjectName: subjectName(values.subjectId),
+              teacherName: teacherName(values.teacherId),
+              className: className(values.classId),
             });
           })}
           className="flex w-full flex-col gap-4"
@@ -274,7 +336,7 @@ export function SubjectModal({ onClose, onSave }: SubjectModalProps) {
             </span>
             <Controller
               control={control}
-              name="subject"
+              name="subjectId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
@@ -285,18 +347,18 @@ export function SubjectModal({ onClose, onSave }: SubjectModalProps) {
                     <SelectValue placeholder="Mathematics" />
                   </SelectTrigger>
                   <SelectContent>
-                    {adminSubjects.map((subject) => (
-                      <SelectItem key={subject} value={subject}>
-                        {subject}
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject.id} value={subject.id}>
+                        {subject.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.subject ? (
+            {errors.subjectId ? (
               <p className="mt-2 text-caption leading-[1.45] text-danger">
-                {errors.subject.message}
+                {errors.subjectId.message}
               </p>
             ) : null}
           </div>
@@ -307,7 +369,7 @@ export function SubjectModal({ onClose, onSave }: SubjectModalProps) {
             </span>
             <Controller
               control={control}
-              name="teacher"
+              name="teacherId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
@@ -318,51 +380,51 @@ export function SubjectModal({ onClose, onSave }: SubjectModalProps) {
                     <SelectValue placeholder="Farhana Akter" />
                   </SelectTrigger>
                   <SelectContent>
-                    {adminTeachers.map((teacher) => (
-                      <SelectItem key={teacher} value={teacher}>
-                        {teacher}
+                    {teachers.map((teacher) => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.teacher ? (
+            {errors.teacherId ? (
               <p className="mt-2 text-caption leading-[1.45] text-danger">
-                {errors.teacher.message}
+                {errors.teacherId.message}
               </p>
             ) : null}
           </div>
 
           <div className="flex w-full flex-col items-start">
             <span className="text-caption font-medium leading-[1.45] text-muted">
-              Classes
+              Class
             </span>
             <Controller
               control={control}
-              name="classes"
+              name="classId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
                     id="admin-subject-classes"
-                    aria-label="Classes"
+                    aria-label="Class"
                     className="mt-2 h-[49px] w-full items-center justify-between gap-2 rounded-[12px] border border-border bg-surface px-[25px] text-body leading-[1.45] text-ink shadow-none focus:outline-none focus:ring-2 focus:ring-ring [&>span]:line-clamp-1 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted [&>svg]:opacity-100"
                   >
-                    <SelectValue placeholder="6–10" />
+                    <SelectValue placeholder="Class 9" />
                   </SelectTrigger>
                   <SelectContent>
-                    {classLabels.map((label) => (
-                      <SelectItem key={label} value={label}>
-                        {label}
+                    {classes.map((classOption) => (
+                      <SelectItem key={classOption.id} value={classOption.id}>
+                        {classOption.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             />
-            {errors.classes ? (
+            {errors.classId ? (
               <p className="mt-2 text-caption leading-[1.45] text-danger">
-                {errors.classes.message}
+                {errors.classId.message}
               </p>
             ) : null}
           </div>

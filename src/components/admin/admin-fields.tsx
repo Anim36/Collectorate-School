@@ -34,9 +34,9 @@ export interface AdminSelectFieldProps {
  * Labelled dropdown, in the admin rhythm.
  *
  * Figma "Category" (2:12047 desktop, 2:12166 tablet, 2:12278 mobile),
- * "Class" (2:12849), "Section" (2:12854), "Month" (2:13322) and
- * "Type" (2:13327): a 13px muted label above a 49px bordered control whose
- * value sits 25px from the leading edge, with a chevron on the trailing edge.
+ * "Class" (2:12849), "Month" (2:13322) and "Type" (2:13327): a 13px muted
+ * label above a 49px bordered control whose value sits 25px from the leading
+ * edge, with a chevron on the trailing edge.
  */
 export function AdminSelectField({
   label,

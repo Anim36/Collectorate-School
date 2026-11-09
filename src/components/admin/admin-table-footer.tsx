@@ -1,3 +1,7 @@
+"use client";
+
+import * as React from "react";
+
 import { cn } from "@/lib/utils";
 
 export interface AdminTableFooterProps {
@@ -12,6 +16,12 @@ export interface AdminTableFooterProps {
   pageCount?: number;
   /** Fired when the admin moves between pages. */
   onPageChange?: (page: number) => void;
+  /**
+   * Shortens the page list to "1  2  3  …  n".
+   *
+   * A table with many pages would otherwise draw a button for every page.
+   */
+  compact?: boolean;
   className?: string;
 }
 
@@ -30,9 +40,20 @@ export function AdminTableFooter({
   page,
   pageCount,
   onPageChange,
+  compact = false,
   className,
 }: AdminTableFooterProps) {
   const paginated = onPageChange !== undefined && page !== undefined;
+  const pages = pageCount ?? 1;
+
+  // A long roll is shortened to its first three pages and its last one.
+  const visiblePages = React.useMemo(() => {
+    if (!compact || pages <= 5) {
+      return Array.from({ length: pages }, (_, index) => index);
+    }
+
+    return [0, 1, 2, pages - 1];
+  }, [compact, pages]);
 
   if (!paginated) {
     return (
@@ -49,8 +70,6 @@ export function AdminTableFooter({
       </div>
     );
   }
-
-  const pages = pageCount ?? 1;
 
   return (
     <div
@@ -74,19 +93,25 @@ export function AdminTableFooter({
           ‹
         </button>
 
-        {Array.from({ length: pages }, (_, index) => (
-          <button
-            key={index}
-            type="button"
-            aria-current={index === page ? "page" : undefined}
-            onClick={() => onPageChange(index)}
-            className={cn(
-              "flex size-[18px] items-center justify-center rounded-[6px] text-caption leading-[1.45] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:size-5",
-              index === page ? "bg-action text-white" : "text-ink hover:bg-tint",
-            )}
-          >
-            {index + 1}
-          </button>
+        {visiblePages.map((index, position) => (
+          <React.Fragment key={index}>
+            {compact && position === 3 && pages > 5 ? (
+              <span className="flex size-[18px] items-center justify-center text-caption leading-[1.45] text-muted md:size-5">
+                …
+              </span>
+            ) : null}
+            <button
+              type="button"
+              aria-current={index === page ? "page" : undefined}
+              onClick={() => onPageChange(index)}
+              className={cn(
+                "flex size-[18px] items-center justify-center rounded-[6px] text-caption leading-[1.45] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:size-5",
+                index === page ? "bg-action text-white" : "text-ink hover:bg-tint",
+              )}
+            >
+              {index + 1}
+            </button>
+          </React.Fragment>
         ))}
 
         <button

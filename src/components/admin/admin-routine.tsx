@@ -21,7 +21,6 @@ import {
   ADMIN_ROUTINE_DAYS,
   ADMIN_ROUTINE_NOTE,
   ADMIN_ROUTINE_PERIOD_TIMES,
-  ADMIN_ROUTINE_SECTIONS,
   ADMIN_ROUTINE_SUBJECTS,
   adminRoutine,
   type AdminRoutineDay,
@@ -55,9 +54,6 @@ export function AdminRoutine() {
   const [selectedClass, setSelectedClass] = React.useState<string>(
     ADMIN_ROUTINE_CLASSES[0],
   );
-  const [selectedSection, setSelectedSection] = React.useState<string>(
-    ADMIN_ROUTINE_SECTIONS[0],
-  );
   const [timetable, setTimetable] = React.useState(adminRoutine);
   const [selected, setSelected] = React.useState<{
     /** Day of the cell. */
@@ -83,14 +79,14 @@ export function AdminRoutine() {
   const saveRoutine = () => {
     toast({
       title: "Routine saved",
-      description: `${selectedClass} ${selectedSection} was saved for the term.`,
+      description: `${selectedClass} was saved for the term.`,
     });
   };
 
   const publishRoutine = () => {
     toast({
       title: "Routine published",
-      description: `${selectedClass} ${selectedSection} is now visible to students and teachers.`,
+      description: `${selectedClass} is now visible to students and teachers.`,
     });
   };
 
@@ -110,21 +106,13 @@ export function AdminRoutine() {
           onValueChange={setSelectedClass}
           className="md:w-[344px] md:shrink-0 xl:w-[560px]"
         />
-
-        <AdminSelectField
-          label="Section"
-          options={ADMIN_ROUTINE_SECTIONS}
-          value={selectedSection}
-          onValueChange={setSelectedSection}
-          className="md:w-[344px] md:shrink-0 xl:w-[560px]"
-        />
       </div>
 
       {/* The timetable. */}
       <div className="flex w-full flex-col items-start rounded-[12px] border border-border bg-surface p-6">
         <table className="hidden w-full table-fixed border-separate border-spacing-0 text-left md:table">
           <caption className="sr-only">
-            Weekly routine for {selectedClass} {selectedSection}
+            Weekly routine for {selectedClass}
           </caption>
           <colgroup>
             <col className="w-[calc((100%_-_12px)/5)]" />

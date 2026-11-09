@@ -6,13 +6,21 @@ import { Download, Upload } from "lucide-react";
 import { AdminTableFooter } from "@/components/admin/admin-table-footer";
 import { PortalTable } from "@/components/shared/portal-table";
 import { Button } from "@/components/ui/button";
-import { adminCsvFile, type AdminCsvRow } from "@/data/admin";
+import type { AdminCsvRow } from "@/data/admin";
 
 export interface CsvImportPanelProps {
   /** The rows the preview table shows. */
   rows: readonly AdminCsvRow[];
   /** Name of the file that was picked. */
   fileName: string;
+  /** How many rows can be imported. */
+  ready: number;
+  /** How many rows cannot be imported. */
+  failed: number;
+  /** The problem with the last pick, when there was one. */
+  warning: string;
+  /** Whether the rows are being written. */
+  importing: boolean;
   /** Fired when the admin picks a CSV file. */
   onFilePicked: (file: File) => void;
   /** Fired when the admin asks to import the rows. */
@@ -28,13 +36,16 @@ export interface CsvImportPanelProps {
  * template" action, the 108px drop area, the 46px result line and the 47px
  * "Review import" action.
  *
- * The panel is a UI only: the file is read in the browser and nothing is
- * uploaded anywhere. "Review import" opens the preview table, which lists
- * the rows the browser read out of the file.
+ * The file is read on the server, so the rows the preview shows are the rows
+ * the server checked.
  */
 export function CsvImportPanel({
   rows,
   fileName,
+  ready,
+  failed,
+  warning,
+  importing,
   onFilePicked,
   onReview,
   className,
@@ -47,8 +58,12 @@ export function CsvImportPanel({
     { header: "Row", cell: (row: AdminCsvRow) => String(row.row) },
     { header: "Name", cell: (row: AdminCsvRow) => row.name },
     { header: "Role", cell: (row: AdminCsvRow) => row.role },
-    { header: "Class / Dept.", cell: (row: AdminCsvRow) => row.classOrDept },
+    { header: "Class", cell: (row: AdminCsvRow) => row.classOrDept },
     { header: "Email", cell: (row: AdminCsvRow) => row.email || "Missing" },
+    {
+      header: "Ready",
+      cell: (row: AdminCsvRow) => (row.valid ? "Yes" : row.problem ?? "No"),
+    },
   ];
 
   const previewRecords = rows.map((row) => ({
@@ -57,8 +72,9 @@ export function CsvImportPanel({
       { label: "Row", value: String(row.row) },
       { label: "Name", value: row.name },
       { label: "Role", value: row.role },
-      { label: "Class / Dept.", value: row.classOrDept },
+      { label: "Class", value: row.classOrDept },
       { label: "Email", value: row.email || "Missing" },
+      { label: "Ready", value: row.valid ? "Yes" : row.problem ?? "No" },
     ],
   }));
 
@@ -89,8 +105,13 @@ export function CsvImportPanel({
           />
         </div>
 
-        <Button type="button" className="h-[47px]" onClick={onReview}>
-          Import {rows.length} accounts
+        <Button
+          type="button"
+          className="h-[47px]"
+          disabled={importing || failed > 0 || rows.length === 0}
+          onClick={onReview}
+        >
+          {importing ? "Importing…" : `Import ${rows.length} accounts`}
         </Button>
 
         <Button
@@ -116,7 +137,7 @@ export function CsvImportPanel({
       </h3>
 
       <p className="text-body leading-[1.45] text-muted">
-        Upload a CSV with name, role, class, section and email.
+        Upload a CSV with name, role, class and email.
       </p>
 
       <Button type="button" variant="secondary" className="h-[49px]">
@@ -151,7 +172,7 @@ export function CsvImportPanel({
         </button>
 
         <p className="mt-4 text-caption leading-[1.45] text-muted">
-          {fileName} · {adminCsvFile.rows} rows
+          {fileName} · {rows.length} rows
         </p>
 
         <input
@@ -170,16 +191,20 @@ export function CsvImportPanel({
       {/* The result of the last pick — one block of two lines. */}
       <div className="flex w-full flex-col">
         <p className="text-body leading-[1.45] text-success">
-          ✓ {adminCsvFile.ready} rows ready to import
+          ✓ {ready} rows ready to import
         </p>
         <p className="text-body leading-[1.45] text-danger">
-          {adminCsvFile.warning}
+          {warning ||
+            (failed > 0
+              ? `${failed} row(s) need fixing before they can be imported`
+              : "")}
         </p>
       </div>
 
       <Button
         type="button"
         className="h-[47px]"
+        disabled={rows.length === 0}
         onClick={() => setReviewing(true)}
       >
         Review import

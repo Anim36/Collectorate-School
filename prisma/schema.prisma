@@ -130,6 +130,9 @@ model User {
   id                 String    @id @default(cuid())
   /// The sign-in handle: the student id for a student, the email or staff id otherwise.
   loginId            String    @unique @map("login_id")
+  /// The sign-in handle in lower case. It is unique, so "Admin" and "admin"
+  /// are the same account.
+  loginIdNormalized  String    @unique @map("login_id_normalized")
   /// The name the account is shown under.
   name               String
   /// Optional contact address. Unique when present.

@@ -73,7 +73,7 @@ const CLASS_NINE_DAYS: readonly RoutineDay[] = [
       "ICT",
       "Religion",
       "History",
-      "PE",
+      "Physical Education",
     ].map((subject, index) => ({
       period: `P${index + 1}`,
       time: PERIOD_TIMES[index],
@@ -107,7 +107,7 @@ const CLASS_NINE_DAYS: readonly RoutineDay[] = [
       "Religion",
       "History",
       "ICT",
-      "PE",
+      "Physical Education",
     ].map((subject, index) => ({
       period: `P${index + 1}`,
       time: PERIOD_TIMES[index],
@@ -140,7 +140,7 @@ const CLASS_NINE_DAYS: readonly RoutineDay[] = [
       "Math",
       "History",
       "ICT",
-      "PE",
+      "Physical Education",
       "Library",
     ].map((subject, index) => ({
       period: `P${index + 1}`,

@@ -28,6 +28,16 @@ export function slug(value: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+/**
+ * The normalised copy of a login id.
+ *
+ * It is lower cased and trimmed, so "Admin" and "admin" are the same
+ * account.
+ */
+export function normalizeLoginId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 /** A taka amount in poisha. 1 taka = 100 poisha. */
 export function poisha(taka: number): number {
   return taka * 100;

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { AdminTextField } from "@/components/admin/admin-text-field";
@@ -15,12 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  ADMIN_PASSWORD_MIN_LENGTH,
-  adminClassSectionOptions,
-  adminDepartments,
-  type AdminUserRole,
-} from "@/data/admin";
 
 /**
  * The add-user form.
@@ -31,7 +25,7 @@ import {
  *
  * The form is validated with react-hook-form and zod: the email must look
  * like an email address, the temporary password must hold at least twelve
- * characters and a student must be given a class and a section.
+ * characters and a number, and a student must be given a class.
  */
 const addUserSchema = z
   .object({
@@ -41,29 +35,23 @@ const addUserSchema = z
     email: z
       .string()
       .trim()
-      .min(1, "Enter an email address")
-      .email("Enter a valid email address"),
+      .optional()
+      .refine(
+        (value) =>
+          value === undefined || value === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
+        "Enter a valid email address",
+      ),
     password: z
       .string()
-      .min(
-        ADMIN_PASSWORD_MIN_LENGTH,
-        `Use at least ${ADMIN_PASSWORD_MIN_LENGTH} characters`,
-      ),
+      .min(12, "Use at least 12 characters")
+      .regex(/\d/, "Include a number in the password"),
   })
   .superRefine((values, context) => {
     if (values.role === "Student" && values.classOrDept === "") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["classOrDept"],
-        message: "Pick a class and a section",
-      });
-    }
-
-    if (values.role === "Teacher" && values.classOrDept === "") {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["classOrDept"],
-        message: "Pick a department",
+        message: "Pick a class",
       });
     }
   });
@@ -80,23 +68,27 @@ const defaultValues: AddUserValues = {
 };
 
 export interface AddUserModalProps {
+  /** The classes of the school, from the database. */
+  classes: readonly { id: string; name: string }[];
   /** Called when the reader dismisses the modal. */
   onClose: () => void;
   /** Called with the new account once the form is valid. */
   onCreate: (values: {
     name: string;
-    role: AdminUserRole;
-    classOrDept: string;
+    role: "Student" | "Teacher";
+    classId: string;
     email: string;
+    password: string;
   }) => void;
 }
 
 /**
  * The add-user dialog.
  *
- * The account is only recorded in memory — nothing is sent to a server.
+ * The class list comes from the database, so it always holds the classes the
+ * school actually has.
  */
-export function AddUserModal({ onClose, onCreate }: AddUserModalProps) {
+export function AddUserModal({ classes, onClose, onCreate }: AddUserModalProps) {
   const {
     control,
     handleSubmit,
@@ -106,9 +98,6 @@ export function AddUserModal({ onClose, onCreate }: AddUserModalProps) {
     defaultValues,
     mode: "onChange",
   });
-
-  // The role decides which options the class and section control offers.
-  const role = useWatch({ control, name: "role" });
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-6 md:items-center">
@@ -139,8 +128,9 @@ export function AddUserModal({ onClose, onCreate }: AddUserModalProps) {
             onCreate({
               name: values.name.trim(),
               role: values.role,
-              classOrDept: values.classOrDept,
-              email: values.email.trim(),
+              classId: values.classOrDept,
+              email: (values.email ?? "").trim(),
+              password: values.password,
             });
           })}
           className="flex w-full flex-col gap-4"
@@ -188,7 +178,7 @@ export function AddUserModal({ onClose, onCreate }: AddUserModalProps) {
 
           <div className="flex w-full flex-col items-start">
             <span className="text-caption font-medium leading-[1.45] text-muted">
-              Class &amp; section
+              Class
             </span>
             <Controller
               control={control}
@@ -202,22 +192,15 @@ export function AddUserModal({ onClose, onCreate }: AddUserModalProps) {
                   }}
                 >
                   <SelectTrigger
-                    aria-label="Class and section"
+                    aria-label="Class"
                     className="mt-2 h-[49px] w-full items-center justify-between gap-2 rounded-[12px] border border-border bg-surface px-[25px] text-body leading-[1.45] text-ink shadow-none focus:outline-none focus:ring-2 focus:ring-ring [&>span]:line-clamp-1 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted [&>svg]:opacity-100"
                   >
-                    <SelectValue
-                      placeholder={
-                        role === "Teacher" ? "Mathematics" : "Class 9 · A"
-                      }
-                    />
+                    <SelectValue placeholder="Class 9" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(role === "Teacher"
-                      ? adminDepartments
-                      : adminClassSectionOptions
-                    ).map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
+                    {classes.map((classOption) => (
+                      <SelectItem key={classOption.id} value={classOption.id}>
+                        {classOption.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -240,7 +223,7 @@ export function AddUserModal({ onClose, onCreate }: AddUserModalProps) {
                 name="email"
                 type="email"
                 placeholder="sadia.rahman@example.com"
-                value={field.value}
+                value={field.value ?? ""}
                 onValueChange={field.onChange}
                 ref={field.ref}
                 hint={errors.email?.message}

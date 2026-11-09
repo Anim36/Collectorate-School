@@ -59,7 +59,7 @@ export function AdminUsersTable({
   const columns = [
     { header: "Name", cell: (row: AdminUser) => row.name },
     { header: "Role", cell: (row: AdminUser) => row.role },
-    { header: "Class / Dept.", cell: (row: AdminUser) => row.classOrDept },
+    { header: "Class", cell: (row: AdminUser) => row.classOrDept },
     {
       header: "Status",
       // Figma draws the status as plain copy in the cell, so a badge would
@@ -113,7 +113,7 @@ export function AdminUsersTable({
     lines: [
       { label: "Name", value: row.name },
       { label: "Role", value: row.role },
-      { label: "Class / Dept.", value: row.classOrDept },
+      { label: "Class", value: row.classOrDept },
       { label: "Status", value: row.status },
       {
         label: "Actions",
