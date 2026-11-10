@@ -104,11 +104,19 @@ step 12 audits.
 | Script | What it does |
 | --- | --- |
 | `scripts/qa/route-inventory.mjs` | Walks every route in `src/app`, loads it at 1440, 768 and 375 in both themes, and reports the status, the console errors and the links that point at a route the app does not serve. |
-| `scripts/qa/figma-deviation.mjs` | Runs the compare scripts for every route that has a Figma reference, at every breakpoint and in both themes, and reports the largest deviation per route and breakpoint. |
+| `scripts/qa/figma-deviation.mjs` | Runs the compare scripts for every route that has a Figma reference, at every breakpoint and in both themes, and reports the largest deviation per route and breakpoint. It signs in with the role each portal page needs, so a portal page is measured and not the dashboard of the session that is open. |
+| `scripts/qa/session.mjs` | Signs the debug browser in with the role a portal page needs, or signs it out. `node scripts/qa/session.mjs STUDENT` |
+| `scripts/qa/qa-portal-accounts.ts` | Puts a QA student and a QA teacher in place, so the portal pages can be measured with a session of the right role. |
 | `scripts/qa/dark-a11y-audit.mjs` | Walks every route in both themes and reports text below the AA contrast ratio, invisible borders, chart and calendar colours too close to the surface, missing alt text, inputs without a label and icon-only buttons without an accessible name. |
 | `scripts/qa/keyboard-check.mjs` | Drives the interactive parts of the app with the keyboard only: the navbar dropdown, the mobile drawer, the modal focus trap, the tabs and the lightbox. |
 | `scripts/qa/anchor-targets.mjs` | Checks every in-page anchor link against the anchors the target page renders. |
 | `scripts/qa/measure-notice-board.mjs` | Measures the blocks of the public notice board on mobile. |
+| `scripts/qa/measure-navbar.mjs` | Measures the sticky navbar band, the brand, the navigation pill and the utility group at 1440, 1366, 1280, 1024, 768 and 375. |
+| `scripts/qa/measure-navbar-style.mjs` | Reads the computed style of the parts of the sticky navbar that carry the glass look: the divider, the notice badge and the underline under the open page. |
+| `scripts/qa/measure-navbar-utility.mjs` | Reads the computed style of the utility group, so a button that keeps its own surface over the photograph shows up. |
+| `scripts/qa/measure-navbar-dark.mjs` | Reads the sticky navbar in the dark theme. |
+| `scripts/qa/check-navbar.mjs` | Checks that the band stays at the top while the page scrolls, that the mobile drawer opens with every link visible and that the drawer closes itself on a route change. |
+| `scripts/qa/crop-band.mjs` | Cuts the top band out of a page screenshot, so the navbar can be looked at on its own. |
 | `scripts/qa/ping.mjs` | Reports whether the server and the debug browser are reachable. |
 | `scripts/qa/data-exports.mjs` | Lists the exports of every file in `src/data`, for the backend handoff. |
 | `scripts/qa/dead-references.mjs` | Reports the scripts that name a file which does not exist. |
@@ -157,6 +165,11 @@ the command line and are described in their own header.
 # The dev server and the debug browser have to be up.
 powershell -File scripts/start-cdp.ps1
 powershell -File scripts/rebuild-and-restart.ps1
+
+# The accounts the portal pages are measured with.
+npx tsx scripts/qa/qa-admin-account.ts
+npx tsx scripts/qa/qa-portal-accounts.ts
+npx tsx scripts/qa/seed-compare-account.ts
 
 node scripts/qa/route-inventory.mjs
 node scripts/qa/figma-deviation.mjs

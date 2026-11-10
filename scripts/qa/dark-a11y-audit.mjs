@@ -156,6 +156,7 @@ const COLOUR_FUNCTION = `(() => {
 
   /* ---- borders ---- */
   const borderIssues = [];
+  const imageBorderIssues = [];
   for (const el of document.querySelectorAll('[class*="border"]')) {
     if (!visible(el)) continue;
     const style = getComputedStyle(el);
@@ -163,6 +164,15 @@ const COLOUR_FUNCTION = `(() => {
     if (!borderWidth) continue;
     const border = parse(style.borderTopColor);
     if (!border || border.a < 0.05) continue;
+    // A hairline over a photograph has no fixed backdrop to be measured
+    // against, so it is reported separately, the way the text is.
+    if (overImage(el)) {
+      imageBorderIssues.push({
+        cls: (el.getAttribute('class') || '').slice(0, 44),
+        color: style.borderTopColor,
+      });
+      continue;
+    }
     const bg = backdrop(el);
     const delta = contrast(border, bg);
     // A border that blends into its surface is invisible.
@@ -282,6 +292,7 @@ const COLOUR_FUNCTION = `(() => {
   return {
     textIssues,
     borderIssues,
+    imageBorderIssues,
     chartIssues,
     imageIssues,
     labelIssues,
@@ -417,6 +428,11 @@ for (const theme of ["light", "dark"]) {
     if (imageText.length) {
       console.log(
         `       text over a photograph (checked by eye): ${imageText.length}`,
+      );
+    }
+    if (data.imageBorderIssues.length) {
+      console.log(
+        `       border over a photograph (checked by eye): ${data.imageBorderIssues.length}`,
       );
     }
   }
