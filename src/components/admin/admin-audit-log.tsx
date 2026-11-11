@@ -10,14 +10,61 @@ import { useSetPortalSection } from "@/components/layout/portal-section-context"
 import { PortalTable } from "@/components/shared/portal-table";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { adminGreeting } from "@/data/admin";
-import {
-  ADMIN_AUDIT_ACTION_TYPES,
-  ADMIN_AUDIT_DATE_RANGE,
-  ADMIN_AUDIT_PAGE_SIZE,
-  adminAuditEvents,
-  type AdminAuditEvent,
-} from "@/data/admin-11c";
+import { listAuditLogAction } from "@/app/admin/actions";
+import type { AdminAuditEvent } from "@/types/admin-11c";
+
+/**
+ * The options of the action-type filter.
+ *
+ * The first one shows every event, the rest name the kinds of change the
+ * school makes.
+ */
+const ACTION_OPTIONS = [
+  "All actions",
+  "Account",
+  "Class",
+  "Subject",
+  "Fee",
+  "Payment",
+  "Notice",
+  "Gallery",
+  "Routine",
+  "Calendar",
+  "File",
+  "Other",
+] as const;
+
+/**
+ * The page size the audit log shows.
+ *
+ * Figma draws four events on a page, so a page holds four rows.
+ */
+const PAGE_SIZE = 4;
+
+export interface AdminAuditLogProps {
+  /** The events the server read for the first page. */
+  initialEvents: {
+    rows: AdminAuditEvent[];
+    total: number;
+  } | null;
+  /** The context line under the heading. */
+  greeting: string;
+}
+
+/**
+ * Hands a CSV file to the browser.
+ */
+function downloadCsv(fileName: string, csv: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
 
 /**
  * The admin audit log page.
@@ -32,49 +79,64 @@ import {
  * - Mobile (375): 24px padding, a 41px heading, a 168px filter block, the 549px
  *   table, the 38px note and the 49px action.
  *
- * The log is read-only: nothing on the page edits an event. The search, the
- * action-type filter and the pagination are held in the page state.
+ * The log is read-only: nothing on the page edits an event. The log itself is
+ * read from the database, and the search, the action-type filter and the
+ * pagination run on the server, so the count in the footer is the number of
+ * events that really match.
  */
-export function AdminAuditLog() {
+export function AdminAuditLog({ initialEvents, greeting }: AdminAuditLogProps) {
   const { toast } = useToast();
 
   // The top bar names the section, as Figma draws it.
   useSetPortalSection("Audit Log");
 
-  const [query, setQuery] = React.useState("");
-  const [action, setAction] = React.useState<string>(
-    ADMIN_AUDIT_ACTION_TYPES[0],
+  const [events, setEvents] = React.useState<readonly AdminAuditEvent[]>(
+    initialEvents?.rows ?? [],
   );
+  const [total, setTotal] = React.useState(initialEvents?.total ?? 0);
+  const [query, setQuery] = React.useState("");
+  const [action, setAction] = React.useState<string>(ACTION_OPTIONS[0]);
   const [page, setPage] = React.useState(0);
 
-  const filtered = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  /**
+   * Reads the log from the server.
+   */
+  const load = React.useCallback(
+    async (nextPage: number) => {
+      const result = await listAuditLogAction({
+        query,
+        actionType: action === "All actions" ? "ALL" : action,
+        page: nextPage,
+        pageSize: PAGE_SIZE,
+      });
 
-    return adminAuditEvents.filter((event) => {
-      const matchesAction =
-        action === ADMIN_AUDIT_ACTION_TYPES[0] || event.type === action;
-      if (!matchesAction) return false;
-      if (needle === "") return true;
+      if (!result.ok) {
+        toast({
+          title: "Could not load the audit log",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
 
-      return (
-        event.user.toLowerCase().includes(needle) ||
-        event.action.toLowerCase().includes(needle) ||
-        event.record.toLowerCase().includes(needle)
-      );
-    });
-  }, [action, query]);
-
-  // A filter change starts the list again from the first page.
-  React.useEffect(() => {
-    setPage(0);
-  }, [action, query]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / ADMIN_AUDIT_PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount - 1);
-  const visible = filtered.slice(
-    currentPage * ADMIN_AUDIT_PAGE_SIZE,
-    currentPage * ADMIN_AUDIT_PAGE_SIZE + ADMIN_AUDIT_PAGE_SIZE,
+      setEvents(result.data.rows);
+      setTotal(result.data.total);
+    },
+    [query, action, toast],
   );
+
+  // The log is read again when the filters change.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(0);
+      void load(0);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
 
   const columns = [
     { header: "Time", cell: (row: AdminAuditEvent) => row.time },
@@ -83,7 +145,7 @@ export function AdminAuditLog() {
     { header: "Record", cell: (row: AdminAuditEvent) => row.record },
   ];
 
-  const mobileRecords = visible.map((row) => ({
+  const mobileRecords = events.map((row) => ({
     id: row.id,
     lines: [
       { label: "Time", value: row.time },
@@ -93,27 +155,67 @@ export function AdminAuditLog() {
     ],
   }));
 
+  /**
+   * Downloads the events that match the filters as a CSV file.
+   */
+  const exportLog = async () => {
+    const result = await listAuditLogAction({
+      query,
+      actionType: action === "All actions" ? "ALL" : action,
+      page: 0,
+      pageSize: 100,
+    });
+
+    if (!result.ok) {
+      toast({
+        title: "Export failed",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const header = ["Time", "User", "Action", "Record", "Type", "Detail"];
+
+    const lines = [header.join(",")];
+
+    for (const row of result.data.rows) {
+      lines.push(
+        [row.time, row.user, row.action, row.record, row.type, row.detail]
+          .map(csvCell)
+          .join(","),
+      );
+    }
+
+    downloadCsv("audit-log.csv", `${lines.join("\r\n")}\r\n`);
+
+    toast({
+      title: "Export ready",
+      description: `${result.data.total} audit event(s) are ready to export.`,
+    });
+  };
+
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 md:px-8 md:py-8">
-      <AdminPageHeader title="Audit Log" description={adminGreeting.context} />
+      <AdminPageHeader title="Audit Log" description={greeting} />
 
       <AdminAuditFilters
         query={query}
         onQueryChange={setQuery}
         action={action}
         onActionChange={setAction}
-        actionOptions={ADMIN_AUDIT_ACTION_TYPES}
+        actionOptions={ACTION_OPTIONS}
       />
 
       <PortalTable
         caption="Audit log"
         columns={columns}
-        rows={visible}
+        rows={events}
         mobileRecords={mobileRecords}
         mobileRecordSize="uniform"
         footer={
           <AdminTableFooter
-            records={visible.length}
+            records={events.length}
             page={currentPage}
             pageCount={pageCount}
             onPageChange={setPage}
@@ -123,23 +225,46 @@ export function AdminAuditLog() {
 
       <p className="text-caption leading-[1.45] text-muted">
         Audit records are read-only and retained for school compliance ·{" "}
-        {ADMIN_AUDIT_DATE_RANGE}
+        {total} event{total === 1 ? "" : "s"} on record
       </p>
 
       <Button
         type="button"
         variant="secondary"
         className="h-[49px] w-[173px] shrink-0"
-        onClick={() =>
-          toast({
-            title: "Export ready",
-            description: `${filtered.length} audit event(s) are ready to export.`,
-          })
-        }
+        onClick={() => void exportLog()}
       >
         <Download aria-hidden className="size-4" />
         Export audit log
       </Button>
     </div>
   );
+}
+
+/**
+ * Escapes one cell of a CSV.
+ *
+ * A cell that starts with =, +, - or @ is prefixed with a quote, so a
+ * spreadsheet never reads it as a formula.
+ */
+function csvCell(value: string): string {
+  const text = value ?? "";
+
+  const escaped =
+    text.startsWith("=") ||
+    text.startsWith("+") ||
+    text.startsWith("-") ||
+    text.startsWith("@")
+      ? `'${text}`
+      : text;
+
+  if (
+    escaped.includes(",") ||
+    escaped.includes('"') ||
+    escaped.includes("\n")
+  ) {
+    return `"${escaped.replace(/"/g, '""')}"`;
+  }
+
+  return escaped;
 }

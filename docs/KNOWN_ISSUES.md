@@ -99,8 +99,9 @@ record of who changed what cannot be rewritten after the fact.
 
 Today nothing enforces that. The rows are written through the Prisma client,
 which has the whole database behind it, and the QA cleanup
-(`scripts/qa/restore-seed-state.ts`, `scripts/qa/check-admin-11b*.ts`) deletes
-audit rows on purpose — that is what the checks need to be able to run again.
+(`scripts/qa/restore-seed-state.ts`, `scripts/qa/check-admin-11b*.ts`,
+`scripts/qa/check-admin-11c.ts`) deletes audit rows on purpose — that is what
+the checks need to be able to run again.
 
 - The rule is to be enforced in **B7**, not before it.
 - The enforcement belongs in the database, not in the application: a rule that
@@ -109,4 +110,57 @@ audit rows on purpose — that is what the checks need to be able to run again.
   `audit_log`, plus a role that is only allowed to `INSERT` into it.
 - The QA scripts need an account that may clean up after itself, or they have
   to be changed to run against a copy of the database, before the rule lands.
+
+## A file that is not attached to anything stays on the disk
+
+The uploads live in the `uploads` folder at the project root, outside the web
+root, and every file is written under a random name (`src/server/storage.ts`).
+The `stored_files` row is what points at it.
+
+When a photograph is removed from an album or an attachment is taken off a
+notice, the file behind it is removed as well (`removeStoredFile` in
+`src/server/services/files.ts`). When the **notice** itself is deleted, the
+attachments go with it through the cascade, but the files behind them stay on
+the disk: the row is set to null by the cascade, so nothing calls
+`removeStoredFile` for it.
+
+The same happens to a file that is uploaded but never linked to a notice or an
+album — the row exists, the file exists, and nothing points at the row.
+
+What is left behind today:
+
+| On the disk | In the database |
+| --- | --- |
+| `uploads/mw9pdzkq-90d2ebaeb4a15f5186d95b3febde88d2.png` | no `stored_files` row |
+| `uploads/mw9ty148-4e3af16fff34de38dbafc83f0a29a354.png` | no `stored_files` row |
+
+Two fixes are needed, and both belong in **B7**:
+
+- `deleteNotice` has to read the attachments of the notice first and remove
+  the file behind each one, the way `deletePhoto` and `removeAttachment`
+  already do.
+- The storage needs a sweep that finds the files on the disk that no
+  `stored_files` row points at, and a file that no row points at is removed.
+  The QA cleanup (`scripts/qa/restore-seed-state.ts`) has to run the same
+  sweep, so a check that is interrupted does not leave a file behind.
+
+## The student still pays in the browser, so the admin queue only holds the seed's rows
+
+The admin side of the fee payment is on the database and on the screen: a
+payment a student submits is a `PENDING` row, and the "Payments to verify"
+action opens the queue, where the admin approves one — the receipt is written
+and the fee lines are marked as paid — or rejects it with a reason that is
+kept with the payment (`src/server/services/fees.ts`).
+
+The student side is not there yet. The payment method page still records the
+payment into the module-level `paymentStore` in `src/data/student.ts`, so
+nothing ever reaches the database as a `PENDING` payment. The seed writes a
+few `PENDING` rows, so the queue the admin reads is the one the seed wrote: a
+payment a student really makes never reaches it.
+
+What is missing belongs to the next step:
+
+- The student needs a server action that writes a `PENDING` payment and its
+  `payment_items`, and the fees page has to read the student's own fee lines
+  from the database instead of the mock list.
 

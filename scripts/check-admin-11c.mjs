@@ -1,10 +1,26 @@
 /**
  * Checks the step 11C behaviours: the fees filters, the fee structure editor,
- * the mark-as-paid action and the audit log filters and pagination.
+ * the mark-as-paid action, the payments to verify and the audit log filters and
+ * pagination.
+ *
+ * The check drives the pages in the debug browser, so it needs the server on
+ * port 3111 and Chrome on the DevTools Protocol port 9222, and the browser
+ * has to be signed in as an admin (see `scripts/qa/session.mjs`).
+ *
+ * The check changes rows of the school, so it puts them back the way the
+ * seed describes them when it is done.
  *
  * Usage: node scripts/check-admin-11c.mjs [width]
  */
 const width = Number(process.argv[2] ?? 1440);
+
+/**
+ * The transaction id the check records its payment with.
+ *
+ * The prefix is what the cleanup looks for, so the payment the check makes is
+ * taken off again and the school is left as the seed describes it.
+ */
+const TRANSACTION_ID = "b3c-check-TX-1";
 
 const endpoint = await (await fetch("http://localhost:9222/json")).json();
 const page = endpoint.find((t) => t.type === "page");
@@ -35,6 +51,7 @@ ws.addEventListener("message", (event) => {
 
 await new Promise((resolve) => ws.addEventListener("open", resolve));
 await send("Page.enable");
+await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", {
   width,
   height: 2400,
@@ -82,6 +99,28 @@ const clickText = (text, tag = "button") => `(() => {
   return "clicked";
 })()`;
 
+/**
+ * Opens the status dropdown.
+ */
+const openDropdown = () => `(() => {
+  document.querySelector('[role="combobox"]').click();
+  return true;
+})()`;
+
+async function chooseOption(label) {
+  await evaluate(openDropdown());
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  await evaluate(`(() => {
+    const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
+      o.textContent.trim() === ${JSON.stringify(label)},
+    );
+    if (!option) return "not found";
+    option.click();
+    return "clicked";
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 900));
+}
+
 console.log(`=== admin 11C behaviours @ ${width}px ===\n`);
 
 /* ----------------------------------------------------------------- fees --- */
@@ -92,16 +131,26 @@ const feeRows = await evaluate(`(() => {
   const tables = [...document.querySelectorAll("table")];
   return {
     feeRows: tables[0].querySelectorAll("tbody tr").length,
+    feeHead: [...tables[0].querySelectorAll("thead th")].map((th) => th.textContent.trim()),
     paymentRows: tables[1].querySelectorAll("tbody tr").length,
     paymentHead: [...tables[1].querySelectorAll("thead th")].map((th) => th.textContent.trim()),
     footer: tables[1].parentElement.textContent.includes("Showing 3 records"),
+    classes: [...tables[0].querySelectorAll("tbody tr")].map((tr) =>
+      tr.children[0].textContent.trim(),
+    ),
   };
 })()`);
 
 check(
-  "the fee structure holds two class bands",
-  feeRows.feeRows === 2,
+  "the fee structure holds a row for every class that has one",
+  feeRows.feeRows === 12,
   `rows ${feeRows.feeRows}`,
+);
+check(
+  "the fee structure reads Class, Monthly tuition, Admission fee and Activities",
+  feeRows.feeHead.join(",") ===
+    "Class,Monthly tuition,Admission fee,Activities",
+  feeRows.feeHead.join(","),
 );
 check(
   "the payments table holds three records on the first page",
@@ -121,19 +170,7 @@ check(
 );
 
 // The status filter narrows the table.
-await evaluate(`(() => {
-  document.querySelector('[role="combobox"]').click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 600));
-await evaluate(`(() => {
-  const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
-    o.textContent.trim() === 'Paid',
-  );
-  option.click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 700));
+await chooseOption("Paid");
 
 const paidOnly = await evaluate(`(() => {
   const tables = [...document.querySelectorAll("table")];
@@ -147,46 +184,37 @@ const paidOnly = await evaluate(`(() => {
 
 check(
   "the Paid filter keeps only the paid payments",
-  paidOnly.rows === 3 && paidOnly.statuses.every((s) => s === "Paid"),
+  paidOnly.rows > 0 && paidOnly.statuses.every((s) => s === "Paid"),
   JSON.stringify(paidOnly.statuses),
 );
 
-// The search narrows the table.
-await evaluate(setSearch("Tanvir"));
-await new Promise((resolve) => setTimeout(resolve, 700));
+// The search narrows the table. The school holds more than one student with
+// a given name, so the search is checked by the student id, which is unique.
+// The status filter is put back to "All" first, so the search is not
+// narrowed by the filter as well.
+await chooseOption("All payment statuses");
+await evaluate(setSearch("ST-2026-0042"));
+await new Promise((resolve) => setTimeout(resolve, 900));
 
 const searched = await evaluate(`(() => {
   const tables = [...document.querySelectorAll("table")];
   return {
     rows: tables[1].querySelectorAll("tbody tr").length,
-    student: tables[1].querySelector("tbody tr")?.children[0].textContent.trim(),
+    students: [...tables[1].querySelectorAll("tbody tr")].map((tr) =>
+      tr.children[0].textContent.trim(),
+    ),
   };
 })()`);
 
 check(
   "the search box narrows the payments to the matching student",
-  searched.rows === 1 && searched.student === "Tanvir Ahmed",
+  searched.rows > 0 && searched.students.every((s) => s === "Arif Hasan"),
   JSON.stringify(searched),
 );
 
-// The mark-as-paid action opens the dialog. The status filter is put back to
-// "All" first, so a payment that is still due is on screen again.
-await evaluate(setSearch(""));
-await new Promise((resolve) => setTimeout(resolve, 500));
-await evaluate(`(() => {
-  document.querySelector('[role="combobox"]').click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 600));
-await evaluate(`(() => {
-  const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
-    o.textContent.trim() === 'All payment statuses',
-  );
-  option.click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 900));
-
+// The mark-as-paid action opens the dialog. The student that was searched for
+// is kept on screen, so the line the check pays is one the seed put back to
+// due and one the cleanup can undo.
 const opened = await evaluate(`(() => {
   const trigger = [...document.querySelectorAll("table tbody button")].find((b) =>
     b.textContent.trim() === "Mark as paid",
@@ -202,36 +230,62 @@ const dialog = await evaluate(`(() => {
   if (!el) return null;
   return {
     title: el.querySelector("h2")?.textContent.trim(),
-    receipt: [...el.querySelectorAll("input")].map((i) => i.value),
-    methods: [...el.querySelectorAll('input[type="radio"]')].map((r) => r.value || r.parentElement.textContent.trim()),
+    fields: [...el.querySelectorAll("input")].map((i) => ({
+      label: i.getAttribute("aria-label"),
+      type: i.getAttribute("type"),
+      value: i.value,
+    })),
   };
 })()`);
 
 check(
   "the mark-as-paid action opens the receipt dialog",
   opened === "clicked" && dialog?.title === "Mark as paid",
-  JSON.stringify(dialog),
+  JSON.stringify(dialog?.fields),
 );
 
-// Recording a payment marks it as paid.
+check(
+  "the dialog never asks for the whole card number",
+  !(dialog?.fields ?? []).some(
+    (field) =>
+      field.label === "Card number" || field.label === "Security code",
+  ),
+  JSON.stringify((dialog?.fields ?? []).map((field) => field.label)),
+);
+
+// Recording a payment marks it as paid. The receipt number is handed out by
+// the server, so the check reads it back instead of typing one in. The
+// transaction id carries the prefix the cleanup looks for, so the payment the
+// check makes is taken off again afterwards.
+await evaluate(`(() => {
+  const el = document.querySelector('[role="dialog"]');
+  const radio = [...el.querySelectorAll('input[type="radio"]')].find(
+    (r) => r.value === "BKASH",
+  );
+  radio.click();
+  return true;
+})()`);
+await new Promise((resolve) => setTimeout(resolve, 500));
+
 await evaluate(`(() => {
   const el = document.querySelector('[role="dialog"]');
   const input = [...el.querySelectorAll("input")].find(
-    (i) => i.getAttribute("aria-label") === "Receipt number",
+    (i) => i.getAttribute("aria-label") === "Transaction id",
   );
+  if (!input) return "no field";
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-  setter.call(input, 'RCP-2026-9999');
+  setter.call(input, ${JSON.stringify(TRANSACTION_ID)});
   input.dispatchEvent(new Event('input', { bubbles: true }));
-  return true;
+  return "typed";
 })()`);
 await new Promise((resolve) => setTimeout(resolve, 400));
 await evaluate(clickText("Record payment"));
-await new Promise((resolve) => setTimeout(resolve, 900));
+await new Promise((resolve) => setTimeout(resolve, 1400));
 
 const recorded = await evaluate(`(() => {
   const tables = [...document.querySelectorAll("table")];
   const row = [...tables[1].querySelectorAll("tbody tr")].find((tr) =>
-    tr.textContent.includes("Arif Hasan"),
+    tr.children[5] && tr.children[5].textContent.trim().startsWith("RCPT-"),
   );
   return {
     status: row?.children[3].textContent.trim(),
@@ -244,7 +298,7 @@ const recorded = await evaluate(`(() => {
 
 check(
   "recording a payment marks it Paid and shows the receipt",
-  recorded.status === "Paid" && recorded.receipt === "RCP-2026-9999",
+  recorded.status === "Paid" && recorded.receipt.startsWith("RCPT-"),
   JSON.stringify({ status: recorded.status, receipt: recorded.receipt }),
 );
 check(
@@ -255,7 +309,7 @@ check(
 
 // The fee structure editor saves the changed amount.
 await evaluate(clickText("Edit fee structure"));
-await new Promise((resolve) => setTimeout(resolve, 700));
+await new Promise((resolve) => setTimeout(resolve, 900));
 
 const feeDialog = await evaluate(`(() => {
   const el = document.querySelector('[role="dialog"]');
@@ -270,11 +324,15 @@ const feeDialog = await evaluate(`(() => {
 })()`);
 
 check(
-  "the edit action opens the fee structure dialog with the band fees",
+  "the edit action opens the fee structure dialog with the class fees",
   feeDialog?.title === "Edit fee structure" &&
-    feeDialog.fields.some((f) => f.value === "1500"),
+    feeDialog.fields.some((f) => f.value !== "" && f.value !== "2026-11-10"),
   JSON.stringify(feeDialog?.fields),
 );
+
+const tuitionBefore = feeDialog?.fields.find(
+  (f) => f.label === "Monthly tuition",
+)?.value;
 
 await evaluate(`(() => {
   const el = document.querySelector('[role="dialog"]');
@@ -288,7 +346,7 @@ await evaluate(`(() => {
 })()`);
 await new Promise((resolve) => setTimeout(resolve, 400));
 await evaluate(clickText("Save fee structure"));
-await new Promise((resolve) => setTimeout(resolve, 900));
+await new Promise((resolve) => setTimeout(resolve, 1200));
 
 const savedFee = await evaluate(`(() => {
   const tables = [...document.querySelectorAll("table")];
@@ -298,8 +356,68 @@ const savedFee = await evaluate(`(() => {
 check(
   "the edited tuition appears in the fee structure table",
   savedFee === "৳ 1,700",
-  `cell "${savedFee}"`,
+  `cell "${savedFee}" (was ${tuitionBefore})`,
 );
+
+// The queue of the payments that wait for the admin.
+await evaluate(clickText("Payments to verify"));
+await new Promise((resolve) => setTimeout(resolve, 900));
+
+const queue = await evaluate(`(() => {
+  const el = document.querySelector('[role="dialog"]');
+  if (!el) return null;
+  return {
+    title: el.querySelector("h2")?.textContent.trim(),
+    items: [...el.querySelectorAll("li")].map((li) => li.textContent.trim()),
+    buttons: [...el.querySelectorAll("button")].map((b) => b.textContent.trim()),
+  };
+})()`);
+
+check(
+  "the queue of the payments to verify opens",
+  queue?.title === "Payments to verify",
+  JSON.stringify(queue?.title),
+);
+check(
+  "the queue lists the payments that wait for the admin",
+  (queue?.items ?? []).length > 0 &&
+    (queue?.buttons ?? []).includes("Approve") &&
+    (queue?.buttons ?? []).includes("Reject"),
+  `${(queue?.items ?? []).length} payment(s)`,
+);
+
+// The rejection needs a reason.
+await evaluate(clickText("Reject"));
+await new Promise((resolve) => setTimeout(resolve, 600));
+
+const rejection = await evaluate(`(() => {
+  const el = document.querySelector('[role="dialog"]');
+  const textarea = el.querySelector("textarea");
+  return {
+    title: el.querySelector("h2")?.textContent.trim(),
+    hasReason: Boolean(textarea),
+    buttons: [...el.querySelectorAll("button")].map((b) => b.textContent.trim()),
+  };
+})()`);
+
+check(
+  "the rejection asks why the payment was refused",
+  rejection.hasReason === true &&
+    (rejection.buttons ?? []).includes("Reject payment"),
+  JSON.stringify(rejection.buttons),
+);
+
+await evaluate(clickText("Cancel"));
+await new Promise((resolve) => setTimeout(resolve, 500));
+await evaluate(`(() => {
+  const el = document.querySelector('[role="dialog"]');
+  const close = [...el.querySelectorAll("button")].find(
+    (b) => b.textContent.trim() === "Close",
+  );
+  if (close) close.click();
+  return true;
+})()`);
+await new Promise((resolve) => setTimeout(resolve, 600));
 
 /* ------------------------------------------------------------- audit log --- */
 
@@ -332,21 +450,9 @@ check(
 );
 
 // The action-type filter narrows the log.
-await evaluate(`(() => {
-  document.querySelector('[role="combobox"]').click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 600));
-await evaluate(`(() => {
-  const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
-    o.textContent.trim() === 'Result',
-  );
-  option.click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 700));
+await chooseOption("Fee");
 
-const resultOnly = await evaluate(`(() => {
+const feeOnly = await evaluate(`(() => {
   const table = document.querySelector("table");
   return {
     rows: table.querySelectorAll("tbody tr").length,
@@ -357,15 +463,15 @@ const resultOnly = await evaluate(`(() => {
 })()`);
 
 check(
-  "the Result filter keeps only the result events",
-  resultOnly.rows === 3 &&
-    resultOnly.actions.every((a) => a.toLowerCase().includes("result")),
-  JSON.stringify(resultOnly.actions),
+  "the Fee filter keeps only the fee events",
+  feeOnly.rows > 0 &&
+    feeOnly.actions.every((a) => a.toLowerCase().includes("fee")),
+  JSON.stringify(feeOnly.actions),
 );
 
 // The search narrows the log.
 await evaluate(setSearch("attendance"));
-await new Promise((resolve) => setTimeout(resolve, 700));
+await new Promise((resolve) => setTimeout(resolve, 900));
 
 const searchedAudit = await evaluate(`(() => {
   const table = document.querySelector("table");
@@ -405,20 +511,8 @@ check(
 // The pagination moves to the next page of events. The filters are put back
 // first, so the log holds every event again.
 await evaluate(setSearch(""));
-await new Promise((resolve) => setTimeout(resolve, 500));
-await evaluate(`(() => {
-  document.querySelector('[role="combobox"]').click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 600));
-await evaluate(`(() => {
-  const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
-    o.textContent.trim() === 'All actions',
-  );
-  option.click();
-  return true;
-})()`);
-await new Promise((resolve) => setTimeout(resolve, 800));
+await new Promise((resolve) => setTimeout(resolve, 700));
+await chooseOption("All actions");
 
 const pageTwo = await evaluate(`(() => {
   const nav = document.querySelector('nav[aria-label="Pagination"]');
@@ -428,7 +522,7 @@ const pageTwo = await evaluate(`(() => {
   next.click();
   return true;
 })()`);
-await new Promise((resolve) => setTimeout(resolve, 700));
+await new Promise((resolve) => setTimeout(resolve, 900));
 
 const paged = await evaluate(`(() => {
   const table = document.querySelector("table");
@@ -456,4 +550,23 @@ console.log(
 );
 
 ws.close();
+
+/* --------------------------------------------------------------- cleanup --- */
+
+// The check changed rows of the school, so they are put back the way the
+// seed describes them.
+const { execFileSync } = await import("node:child_process");
+const { join } = await import("node:path");
+
+console.log("");
+
+execFileSync(
+  process.execPath,
+  [
+    join(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs"),
+    "scripts/qa/restore-seed-state.ts",
+  ],
+  { stdio: "inherit" },
+);
+
 process.exit(failed.length === 0 ? 0 : 1);

@@ -134,31 +134,38 @@ function buildStudents(): DemoStudent[] {
     group.names.forEach((name, index) => {
       counter += 1;
 
-      const isArif = name === studentProfile.name;
+      // The signed-in student is the one the student profile names, and the
+      // profile names the class as well. A name that appears in more than one
+      // class (there is an "Arif Hasan" in Class 9 and one in Class 6) is
+      // the profile student only in the class the profile names, because the
+      // student id has to be unique across the whole school.
+      const isProfileStudent =
+        name === studentProfile.name &&
+        group.className === studentProfile.className;
 
       students.push({
         id: `student-${slugId(group.classId)}-${index + 1}`,
-        studentId: isArif
+        studentId: isProfileStudent
           ? studentProfile.studentId
           : `ST-2026-${String(counter).padStart(4, "0")}`,
         name,
         classId: group.classId,
         className: group.className,
         roll: index + 1,
-        email: isArif
+        email: isProfileStudent
           ? studentProfile.email
           : uniqueEmail(name, usedEmails),
-        guardianName: isArif
+        guardianName: isProfileStudent
           ? studentProfile.guardian
           : `Guardian of ${name}`,
-        guardianPhone: isArif
+        guardianPhone: isProfileStudent
           ? studentProfile.guardianPhone
           : "+880 1700 000000",
         phone: "",
-        emergencyContact: isArif ? studentProfile.emergencyContact : "",
-        address: isArif ? studentProfile.address : "Narail, Bangladesh",
+        emergencyContact: isProfileStudent ? studentProfile.emergencyContact : "",
+        address: isProfileStudent ? studentProfile.address : "Narail, Bangladesh",
         photoUrl: "/images/student.jpg",
-        dateOfBirth: isArif ? "2011-03-15" : "2011-05-01",
+        dateOfBirth: isProfileStudent ? "2011-03-15" : "2011-05-01",
       });
     });
   }

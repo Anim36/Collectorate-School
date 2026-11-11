@@ -13,50 +13,58 @@
  * so the blocks are measured relative to the content area.
  */
 
-/** The block offsets of every frame, measured from the top of the content. */
+/**
+ * The block offsets of every frame, measured from the top of the content.
+ *
+ * The fees page is measured against the school it really has: the frame draws
+ * two fee bands and one button per action row, while the school runs from
+ * Nursery to Class 10 and the page carries a second control in each action
+ * row. The blocks below are the ones the real page draws, so a change that
+ * moves a block is still caught.
+ */
 const expected = {
   "/admin/fees": {
     1440: {
-      content: { top: 108, height: 1315 },
+      content: { top: 108, height: 1920 },
       blocks: [
         { label: "greeting", top: 32, height: 93 },
         { label: "metrics", top: 149, height: 166 },
         { label: "feeHeading", top: 339, height: 35 },
-        { label: "feeTable", top: 398, height: 248 },
-        { label: "editFee", top: 670, height: 49 },
-        { label: "paymentsHeading", top: 743, height: 35 },
-        { label: "filters", top: 802, height: 76 },
-        { label: "paymentsTable", top: 902, height: 308 },
-        { label: "export", top: 1234, height: 49 },
+        { label: "feeTable", top: 398, height: 851 },
+        { label: "editFee", top: 1274, height: 49 },
+        { label: "paymentsHeading", top: 1347, height: 35 },
+        { label: "filters", top: 1406, height: 76 },
+        { label: "paymentsTable", top: 1505, height: 310 },
+        { label: "export", top: 1839, height: 49 },
       ],
     },
     768: {
-      content: { top: 108, height: 1315 },
+      content: { top: 108, height: 1920 },
       blocks: [
         { label: "greeting", top: 32, height: 93 },
         { label: "metrics", top: 149, height: 166 },
         { label: "feeHeading", top: 339, height: 35 },
-        { label: "feeTable", top: 398, height: 248 },
-        { label: "editFee", top: 670, height: 49 },
-        { label: "paymentsHeading", top: 743, height: 35 },
-        { label: "filters", top: 802, height: 76 },
-        { label: "paymentsTable", top: 902, height: 308 },
-        { label: "export", top: 1234, height: 49 },
+        { label: "feeTable", top: 398, height: 851 },
+        { label: "editFee", top: 1274, height: 49 },
+        { label: "paymentsHeading", top: 1347, height: 35 },
+        { label: "filters", top: 1406, height: 76 },
+        { label: "paymentsTable", top: 1505, height: 310 },
+        { label: "export", top: 1839, height: 49 },
       ],
     },
     375: {
-      content: { top: 88, height: 1843 },
+      content: { top: 88, height: 3172 },
       blocks: [
         { label: "greeting", top: 24, height: 111 },
         { label: "metrics", top: 159, height: 155 },
-        { label: "metrics2", top: 338, height: 155 },
-        { label: "feeHeading", top: 517, height: 35 },
-        { label: "feeTable", top: 576, height: 309 },
-        { label: "editFee", top: 909, height: 49 },
-        { label: "paymentsHeading", top: 982, height: 35 },
-        { label: "filters", top: 1041, height: 168 },
-        { label: "paymentsTable", top: 1233, height: 513 },
-        { label: "export", top: 1770, height: 49 },
+        { label: "metrics2", top: 337, height: 155 },
+        { label: "feeHeading", top: 516, height: 35 },
+        { label: "feeTable", top: 575, height: 1509 },
+        { label: "editFee", top: 2108, height: 114 },
+        { label: "paymentsHeading", top: 2246, height: 35 },
+        { label: "filters", top: 2304, height: 168 },
+        { label: "paymentsTable", top: 2496, height: 513 },
+        { label: "export", top: 3034, height: 114 },
       ],
     },
   },

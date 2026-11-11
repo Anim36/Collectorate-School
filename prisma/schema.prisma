@@ -166,6 +166,7 @@ model User {
   resultsEntered   ExamResult[]
   sheetsEntered    ResultSheet[]
   paymentsRecorded Payment[]
+  paymentsReviewed Payment[]        @relation("PaymentReviewedBy")
   imagesUploaded   GalleryPhoto[]    @relation("GalleryUploader")
   imagesReviewed   GalleryPhoto[]    @relation("GalleryReviewer")
   filesUploaded    StoredFile[]      @relation("FileUploader")
@@ -548,6 +549,14 @@ model Fee {
   feeStructureId String    @map("fee_structure_id")
   /// The label shown in the fees table, e.g. "November tuition".
   label          String
+  /**
+   * The billing slot of the line, e.g. "2026-11:tuition".
+   *
+   * It carries the period and the line of the period, so a student holds one
+   * fee per slot. The unique key on the student, the fee structure and the
+   * slot is what makes issuing the same slot twice change nothing.
+   */
+  period         String
   /// The amount in poisha.
   amountPoisha   Int       @map("amount_poisha")
   dueDate        DateTime  @map("due_date") @db.Date
@@ -564,9 +573,24 @@ model Fee {
 
   /// One label per student per due date, so the seed can upsert a fee line.
   @@unique([studentId, label, dueDate])
+  /// One line per student per fee structure per billing slot, so issuing the
+  /// same slot twice never creates a second line.
+  @@unique([studentId, feeStructureId, period])
   @@index([studentId, status])
   @@index([feeStructureId])
   @@map("fees")
+}
+
+/// The last receipt number handed out in a year.
+///
+/// The row is locked while a receipt is written, so two payments that run at
+/// the same time cannot be given the same number.
+model ReceiptCounter {
+  /// The year the receipts belong to, e.g. 2026.
+  year        Int @id
+  /// The number of the last receipt handed out in that year.
+  lastNumber  Int @map("last_number")
+  @@map("receipt_counters")
 }
 
 /// A recorded payment. Card data is never stored beyond the last four digits.
@@ -583,10 +607,17 @@ model Payment {
   status        PaymentStatus @default(COMPLETED)
   paidAt        DateTime?     @map("paid_at")
   recordedById  String?       @map("recorded_by_id")
+  /// The admin who looked at a payment that waits for verification.
+  reviewedById  String?       @map("reviewed_by_id")
+  /// When the payment was approved or rejected.
+  reviewedAt    DateTime?     @map("reviewed_at")
+  /// Why a payment was rejected. Empty while it waits and after it is approved.
+  reviewNote    String?       @map("review_note")
   createdAt     DateTime      @default(now()) @map("created_at")
 
   student    Student       @relation(fields: [studentId], references: [id], onDelete: Restrict)
   recordedBy User?         @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+  reviewedBy User?         @relation("PaymentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   items      PaymentItem[]
   receipt    Receipt?
 
@@ -594,6 +625,7 @@ model Payment {
   @@index([method])
   @@index([status])
   @@index([recordedById])
+  @@index([reviewedById])
   @@map("payments")
 }
 

@@ -4,7 +4,7 @@ import * as React from "react";
 
 import { AdminTableFooter } from "@/components/admin/admin-table-footer";
 import { PortalTable } from "@/components/shared/portal-table";
-import type { AdminActivityRow, AdminAttentionRow } from "@/data/admin";
+import type { AdminActivityRow, AdminAttentionRow } from "@/types/admin-11c";
 
 export interface AdminAttentionTableProps {
   /** Rows rendered in the table. */

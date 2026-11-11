@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
-import { adminFeeChart, type AdminFeeMonth } from "@/data/admin";
+import type { AdminFeeMonth } from "@/types/admin-11c";
 
 export interface AdminFeeChartProps {
   /** One bar per month, in order. */
@@ -21,9 +21,9 @@ export interface AdminFeeChartProps {
  *   wrap onto two lines as well, so the card is 433px tall.
  *
  * The plot is a plain CSS bar chart, as the attendance chart is: six bars whose
- * heights are the ones Figma draws (144, 162, 156, 170, 182 and 175px),
- * sitting on a 220px baseline. The bars are inset 6px from the plot and 12px
- * apart, which is the rhythm Figma measures.
+ * heights follow the money that was really collected in each month, sitting
+ * on a 220px baseline. The bars are inset 6px from the plot and 12px apart,
+ * which is the rhythm Figma measures.
  */
 export function AdminFeeChart({ months, className }: AdminFeeChartProps) {
   return (
@@ -34,10 +34,10 @@ export function AdminFeeChart({ months, className }: AdminFeeChartProps) {
       )}
     >
       <h3 className="text-body-lg font-semibold leading-[1.45] text-ink">
-        {adminFeeChart.title}
+        Fees collected · Last 6 months
       </h3>
       <p className="mt-4 text-caption leading-[1.45] text-muted">
-        {adminFeeChart.caption}
+        BDT thousands · Collected each month
       </p>
 
       {/* Plot. */}
@@ -45,7 +45,7 @@ export function AdminFeeChart({ months, className }: AdminFeeChartProps) {
         className="relative mt-4 flex h-[220px] w-full items-end"
         role="img"
         aria-label={`Fees collected over the last ${months.length} months: ${months
-          .map((month) => `${month.label} ${month.value}K`)
+          .map((month) => `${month.label} ${month.amount}`)
           .join(", ")}`}
       >
         <div className="flex h-full w-full items-end gap-[12px] px-[6px]">
@@ -69,7 +69,7 @@ export function AdminFeeChart({ months, className }: AdminFeeChartProps) {
         {months.map((month, index) => (
           <React.Fragment key={month.label}>
             {index > 0 ? "   " : null}
-            {month.label} {month.value}K
+            {month.label} {month.amount}
           </React.Fragment>
         ))}
       </p>

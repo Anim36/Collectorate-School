@@ -1,6 +1,6 @@
 import { StatCard } from "@/components/shared/stat-card";
 import { cn } from "@/lib/utils";
-import type { AdminMetric } from "@/data/admin";
+import type { AdminMetric } from "@/types/admin-11c";
 
 export interface AdminMetricsProps {
   /** Metrics rendered in the row. */

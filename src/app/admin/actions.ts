@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { auth } from "@/auth";
+import { getCurrentUser } from "@/server/auth-guard";
 import type { ServiceResult } from "@/server/services/admin-schemas";
 import type { UserList } from "@/server/services/users";
 import type {
@@ -20,6 +20,13 @@ import type {
   SaveNoticeInput,
 } from "@/server/services/admin-11b-schemas";
 import type {
+  IssueFeesInput,
+  ListAuditLogInput,
+  ListPaymentsInput,
+} from "@/server/services/admin-11c-schemas";
+import { rejectPaymentSchema } from "@/server/services/admin-11c-schemas";
+import type { PaymentMethod } from "@/generated/prisma/enums";
+import type {
   AdminNoticeList as NoticeList,
   AdminNoticeRow as NoticeRow,
 } from "@/types/admin-11b";
@@ -32,6 +39,11 @@ import type {
   AdminRoutineSheet as RoutineSheet,
 } from "@/types/admin-11b";
 import type { AdminCalendarEventList as CalendarEventList } from "@/types/admin-11b";
+import type {
+  AdminAuditList as AuditList,
+  AdminDashboardData as DashboardData,
+  AdminFeesData as FeesData,
+} from "@/types/admin-11c";
 
 /**
  * The admin actions.
@@ -43,16 +55,22 @@ import type { AdminCalendarEventList as CalendarEventList } from "@/types/admin-
 /**
  * The admin behind the session.
  *
+ * The row is read again from the database on every call, so an account that
+ * has been deactivated, a session a password change has superseded, or an
+ * account that still has to replace its temporary password cannot run an
+ * action even while its cookie is still in the browser.
+ *
  * It returns null when nobody is signed in or when the account is not an
  * admin, so an action can refuse without throwing.
  */
 async function currentAdmin(): Promise<{ id: string } | null> {
-  const session = await auth();
+  const user = await getCurrentUser();
 
-  if (!session?.user?.id) return null;
-  if (session.user.role !== "ADMIN") return null;
+  if (!user) return null;
+  if (user.role !== "ADMIN") return null;
+  if (user.mustChangePassword) return null;
 
-  return { id: session.user.id };
+  return { id: user.id };
 }
 
 /**
@@ -956,4 +974,249 @@ export async function deleteCalendarEventAction(
   }
 
   return result;
+}
+
+/* ----------------------------------------------------------------- fees --- */
+
+/**
+ * Reads the fees of the school.
+ *
+ * The summary, the fee structure and the payments table all come from the
+ * database, so the count in the footer is the number of lines that really
+ * match the filters.
+ */
+export async function listFeesAction(input: {
+  query?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<ServiceResult<FeesData>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { getFeesData } = await import("@/server/services/fees");
+
+  return {
+    ok: true,
+    data: await getFeesData({
+      query: input.query,
+      status: input.status as ListPaymentsInput["status"],
+      page: input.page,
+      pageSize: input.pageSize,
+    }),
+  };
+}
+
+/**
+ * Edits the fee structure of a class.
+ */
+export async function saveFeeStructureAction(input: {
+  id: string;
+  monthlyTuitionPoisha: number;
+  admissionFeePoisha: number;
+  activitiesPoisha: number;
+  dueDate: string;
+}): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { saveFeeStructure } = await import("@/server/services/fees");
+
+  const result = await saveFeeStructure(admin.id, input);
+
+  if (result.ok) {
+    revalidatePath("/admin/fees");
+  }
+
+  return result;
+}
+
+/**
+ * Issues the fees of a billing slot to the students of a class.
+ *
+ * The issue is idempotent: a student holds one line per slot and per line, so
+ * running it twice writes nothing the second time.
+ */
+export async function issueFeesAction(input: {
+  classId: string;
+  period: string;
+  lines: string[];
+}): Promise<ServiceResult<{ issued: number }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { issueFees } = await import("@/server/services/fees");
+
+  const result = await issueFees(admin.id, {
+    classId: input.classId,
+    period: input.period,
+    lines: input.lines as IssueFeesInput["lines"],
+  });
+
+  if (result.ok) {
+    revalidatePath("/admin/fees");
+  }
+
+  return result;
+}
+
+/**
+ * Records a payment the admin took at the desk.
+ */
+export async function recordPaymentAction(input: {
+  feeIds: string[];
+  method: string;
+  transactionId?: string;
+  cardLast4?: string;
+  amountPoisha: number;
+  paidOn: string;
+}): Promise<ServiceResult<{ receiptNo: string; amountPoisha: number }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { recordPayment } = await import("@/server/services/fees");
+
+  const result = await recordPayment(admin.id, {
+    ...input,
+    method: input.method as PaymentMethod,
+  });
+
+  if (result.ok) {
+    revalidatePath("/admin/fees");
+  }
+
+  return result;
+}
+
+/**
+ * The CSV of the payments that match the filters.
+ */
+export async function exportFeesAction(input: {
+  query?: string;
+  status?: string;
+}): Promise<ServiceResult<{ csv: string; fileName: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { exportFeesCsv } = await import("@/server/services/fees");
+
+  return exportFeesCsv({
+    query: input.query,
+    status: input.status as ListPaymentsInput["status"],
+  });
+}
+
+/**
+ * Approves a payment a student submitted.
+ *
+ * The receipt is written and the fee lines are marked as paid, so the fees
+ * table and the receipt agree the moment the admin approves the payment.
+ */
+export async function approvePaymentAction(
+  paymentId: string,
+): Promise<ServiceResult<{ receiptNo: string; amountPoisha: number }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { approvePayment } = await import("@/server/services/fees");
+
+  const result = await approvePayment(admin.id, paymentId);
+
+  if (result.ok) {
+    revalidatePath("/admin/fees");
+  }
+
+  return result;
+}
+
+/**
+ * Rejects a payment a student submitted.
+ *
+ * The admin has to say why, so the student knows what to do next.
+ */
+export async function rejectPaymentAction(input: {
+  paymentId: string;
+  reason: string;
+}): Promise<ServiceResult<{ id: string }>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { rejectPayment } = await import("@/server/services/fees");
+
+  const parsed = rejectPaymentSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "That reason is not valid",
+    };
+  }
+
+  const result = await rejectPayment(
+    admin.id,
+    parsed.data.paymentId,
+    parsed.data.reason,
+  );
+
+  if (result.ok) {
+    revalidatePath("/admin/fees");
+  }
+
+  return result;
+}
+
+/* ------------------------------------------------------------- audit log --- */
+
+/**
+ * Reads the audit log of the school.
+ */
+export async function listAuditLogAction(input: {
+  query?: string;
+  actionType?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<ServiceResult<AuditList>> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { listAuditLog } = await import("@/server/services/audit-log");
+
+  return {
+    ok: true,
+    data: await listAuditLog({
+      query: input.query,
+      actionType: input.actionType as ListAuditLogInput["actionType"],
+      from: input.from,
+      to: input.to,
+      page: input.page,
+      pageSize: input.pageSize,
+    }),
+  };
+}
+
+/* ------------------------------------------------------------- dashboard --- */
+
+/**
+ * Reads everything the admin dashboard shows.
+ */
+export async function listDashboardAction(): Promise<
+  ServiceResult<DashboardData>
+> {
+  const admin = await currentAdmin();
+
+  if (!admin) return refuse();
+
+  const { getDashboardData } = await import("@/server/services/dashboard");
+
+  return { ok: true, data: await getDashboardData() };
 }

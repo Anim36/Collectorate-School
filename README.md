@@ -9,9 +9,10 @@ it was built from, at 1440, 768 and 375 pixels, in the light and the dark
 theme. The verification scripts that do this live in `scripts/` and are
 documented in [`scripts/README.md`](scripts/README.md).
 
-The app runs on mock data today. [`docs/BACKEND_HANDOFF.md`](docs/BACKEND_HANDOFF.md)
-names the table each mock file becomes and every endpoint the in-memory
-changes will need.
+The public pages, the student portal and the teacher portal still run on mock
+data; the admin portal reads and writes the school in the database.
+[`docs/BACKEND_HANDOFF.md`](docs/BACKEND_HANDOFF.md) names the table each
+mock file becomes and every endpoint the in-memory changes will need.
 
 ---
 
@@ -51,6 +52,7 @@ The dev server runs on <http://localhost:3000>.
 | `npm run qa:admin-11b` | The admin notices, gallery, routine and calendar services. |
 | `npm run qa:admin-11b-security` | The upload rules, the file names and the sanitizing of the notice body. |
 | `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP. Needs the server on port 3111. |
+| `npm run qa:admin-11c` | The admin fees, audit log and dashboard services. |
 
 ### Environment
 
@@ -116,6 +118,29 @@ file.
 `src/server/storage.ts` is the only module that touches the file system, so
 the storage can later be swapped for Cloudinary or S3 by replacing that one
 file.
+
+### The fees, the audit log and the dashboard
+
+The three step 11C admin pages read and write the school in the database, so
+the figures they show are the real ones and a change survives a reload.
+
+| | |
+| --- | --- |
+| The fees | The fee structure is per class, and the students are charged from it. A fee line belongs to a billing slot (`2026-11:tuition`), and the unique key on the student, the structure and the slot is what makes issuing the same slot twice change nothing. |
+| The money | An amount is an integer number of poisha (1 taka = 100 poisha), so no amount ever goes through a float. `src/lib/money.ts` turns one into the other. |
+| The invoices | An invoice number is worked out from the line itself, so a line always carries the same invoice and running the seed twice changes nothing. |
+| The receipts | A receipt number comes from a counter row that is locked while the receipt is written, so two payments at the same time cannot be given the same number. |
+| The payments | A payment, its receipt and the new state of the fee lines are written in one transaction, so a failure leaves nothing behind. The amount has to be the sum of the chosen lines: a partial payment is not supported. |
+| The card | A card payment never carries the full number and never carries the security code. Only the last four digits are kept. |
+| The issue | The admin picks a class, a month and the lines of that month, and the school bills the students of the class. A student holds one line per slot, so issuing the same month twice changes nothing. |
+| The queue | A payment a student submits waits as `PENDING`. The admin approves it — the receipt is written and the fee lines are marked as paid — or rejects it with a reason, so the student knows what to do next. |
+| The audit log | Read-only. Nothing edits or removes an event, and a row whose metadata holds a password, a hash, a token or card data is redacted before it is read. |
+| The dashboard | The counts are counts of rows, the chart is the collection of the last six months, and the "Attention needed" table counts the records that really wait for the admin. |
+
+The money of the school lives in `src/server/services/fees.ts`,
+`src/server/services/audit-log.ts` and `src/server/services/dashboard.ts`. The
+pages never touch the database themselves, and every input is checked on the
+server before it reaches it.
 
 ### Signing in
 

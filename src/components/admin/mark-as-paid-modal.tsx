@@ -5,52 +5,78 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { AdminTextField } from "@/components/admin/admin-fields";
-import {
-  ADMIN_PAYMENT_METHODS,
-  type AdminPayment,
-  type AdminPaymentMethod,
-} from "@/data/admin-11c";
+import type { AdminFeeRow } from "@/types/admin-11c";
+
+/**
+ * The payment methods an admin can record.
+ *
+ * The names are the ones the tables show.
+ */
+const PAYMENT_METHODS = [
+  { label: "bKash", value: "BKASH" },
+  { label: "Nagad", value: "NAGAD" },
+  { label: "Cash", value: "CASH" },
+  { label: "Bank transfer", value: "BANK_TRANSFER" },
+  { label: "Card", value: "CARD" },
+] as const;
 
 export interface MarkAsPaidModalProps {
   /** Called when the admin dismisses the modal. */
   onClose: () => void;
   /** Called with the recorded payment. */
   onSave: (values: {
-    receipt: string;
-    method: AdminPaymentMethod;
+    method: string;
+    transactionId?: string;
+    cardLast4?: string;
     paidOn: string;
   }) => void;
   /** The payment being recorded. */
-  payment: AdminPayment;
+  payment: AdminFeeRow;
 }
 
 /**
  * The mark-as-paid dialog.
  *
- * The admin records the receipt number, the method and the date the payment
- * was received. The payment is only recorded in memory — no money moves.
+ * The admin records the method, the transaction id the sender quoted, the
+ * last four digits of a card and the date the payment was received. The
+ * receipt number is handed out by the server, so it is never typed in by
+ * hand.
  */
 export function MarkAsPaidModal({
   onClose,
   onSave,
   payment,
 }: MarkAsPaidModalProps) {
-  const [receipt, setReceipt] = React.useState(payment.receipt);
-  const [method, setMethod] = React.useState<AdminPaymentMethod>(
-    payment.method === "" ? "bKash" : payment.method,
-  );
-  const [paidOn, setPaidOn] = React.useState(
-    payment.paidOn === "" ? "2026-11-04" : payment.paidOn,
-  );
+  const [method, setMethod] = React.useState("CASH");
+  const [transactionId, setTransactionId] = React.useState("");
+  const [cardLast4, setCardLast4] = React.useState("");
+  const [paidOn, setPaidOn] = React.useState(today());
   const [error, setError] = React.useState<string | null>(null);
 
   const submit = () => {
-    if (receipt.trim() === "") {
-      setError("Enter the receipt number");
+    // A mobile payment always carries the transaction id the sender quoted.
+    if ((method === "BKASH" || method === "NAGAD") && transactionId.trim() === "") {
+      setError("Enter the transaction id of the payment");
       return;
     }
 
-    onSave({ receipt: receipt.trim(), method, paidOn });
+    // Only a card payment carries card digits, and only the last four.
+    if (method === "CARD" && !/^\d{4}$/.test(cardLast4.trim())) {
+      setError("Enter the last four digits of the card");
+      return;
+    }
+
+    if (method !== "CARD" && cardLast4.trim() !== "") {
+      setError("Only a card payment carries card digits");
+      return;
+    }
+
+    onSave({
+      method,
+      transactionId: transactionId.trim() === "" ? undefined : transactionId.trim(),
+      cardLast4: method === "CARD" ? cardLast4.trim() : undefined,
+      paidOn,
+    });
   };
 
   return (
@@ -77,47 +103,76 @@ export function MarkAsPaidModal({
         }
       >
         <div className="flex w-full flex-col gap-4">
-          <AdminTextField
-            label="Receipt number"
-            value={receipt}
-            onValueChange={setReceipt}
-            placeholder="RCP-2026-4474"
-            hint={error ?? undefined}
-            ariaLabel="Receipt number"
-          />
-
           <fieldset className="flex w-full flex-col items-start gap-2">
             <legend className="text-caption font-medium leading-[1.45] text-muted">
               Method
             </legend>
             <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 md:gap-x-8">
-              {ADMIN_PAYMENT_METHODS.map((entry) => (
+              {PAYMENT_METHODS.map((entry) => (
                 <label
-                  key={entry}
+                  key={entry.value}
                   className="flex items-center gap-1.5 text-body leading-[1.45] text-ink"
                 >
                   <input
                     type="radio"
                     name="payment-method"
-                    checked={method === entry}
-                    onChange={() => setMethod(entry)}
+                    value={entry.value}
+                    checked={method === entry.value}
+                    onChange={() => {
+                      setMethod(entry.value);
+                      setError(null);
+                    }}
                     className="size-4 shrink-0 rounded-[4px] border border-border accent-[hsl(var(--action))]"
                   />
-                  {entry}
+                  {entry.label}
                 </label>
               ))}
             </div>
           </fieldset>
+
+          {method === "BKASH" || method === "NAGAD" ? (
+            <AdminTextField
+              label="Transaction id"
+              value={transactionId}
+              onValueChange={setTransactionId}
+              placeholder="TX-2026-4474"
+              ariaLabel="Transaction id"
+            />
+          ) : null}
+
+          {method === "CARD" ? (
+            <AdminTextField
+              label="Card last four"
+              value={cardLast4}
+              onValueChange={setCardLast4}
+              placeholder="4242"
+              ariaLabel="Card last four"
+            />
+          ) : null}
 
           <AdminTextField
             label="Paid on"
             type="date"
             value={paidOn}
             onValueChange={setPaidOn}
+            hint={error ?? undefined}
             ariaLabel="Paid on"
           />
         </div>
       </Modal>
     </div>
   );
+}
+
+/**
+ * Today, as the date input takes it.
+ */
+function today(): string {
+  const now = new Date();
+
+  return [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, "0"),
+    String(now.getUTCDate()).padStart(2, "0"),
+  ].join("-");
 }

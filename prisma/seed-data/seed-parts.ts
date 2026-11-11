@@ -454,6 +454,22 @@ export async function seedExamsAndResults(
 /* ------------------------------------------------------------------ fees --- */
 
 /**
+ * The billing slot the seed writes the fees of.
+ *
+ * Every line of the seed belongs to it, so the seed can tell the lines it
+ * owns from the lines the admin issued later.
+ */
+const SEED_PERIOD = "2026-11";
+
+/**
+ * The prefix every payment of the seed carries.
+ *
+ * The seed writes its payments from scratch every time, so the rows an earlier
+ * run left behind are found through this prefix.
+ */
+const SEEDED_PAYMENT_PREFIX = "payment-RCP-";
+
+/**
  * The fee structure of every class, the fees of the demo students and the
  * payments already made.
  *
@@ -522,13 +538,12 @@ export async function seedFees(
     studentId: string;
     feeStructureId: string;
     label: string;
+    period: string;
     amountPoisha: number;
     dueDate: Date;
     status: "DUE";
     invoiceNo: string;
   }[] = [];
-
-  let invoiceCounter = 11041;
 
   for (const student of SEED_DEMO_DATA.students) {
     const studentId = studentIds.get(student.id);
@@ -537,23 +552,40 @@ export async function seedFees(
     const structure = structureByClass.get(student.classId);
     if (!structure) continue;
 
+    // Every line belongs to a billing slot, so a student holds one fee per
+    // slot and per line.
     const items = [
-      { label: "November tuition", amount: structure.monthlyTuitionPoisha },
-      { label: "Annual activities", amount: structure.activitiesPoisha },
+      {
+        label: "November tuition",
+        period: "2026-11:tuition",
+        amount: structure.monthlyTuitionPoisha,
+      },
+      {
+        label: "Annual activities",
+        period: "2026-11:activities",
+        amount: structure.activitiesPoisha,
+      },
     ];
 
     for (const item of items) {
-      invoiceCounter += 1;
+      // The invoice number is worked out from the line itself, so the same
+      // line always carries the same invoice and running the seed twice
+      // changes nothing.
+      const invoiceNo = `INV-2026-${invoiceNumberFor(
+        studentId,
+        item.period,
+      )}`;
 
       feeRows.push({
         id: `fee-${studentId}-${slug(item.label)}`,
         studentId,
         feeStructureId: structure.id,
         label: item.label,
+        period: item.period,
         amountPoisha: item.amount,
         dueDate,
         status: "DUE",
-        invoiceNo: `INV-2026-${invoiceCounter}`,
+        invoiceNo,
       });
     }
   }
@@ -571,72 +603,157 @@ export async function seedFees(
         },
       },
       create: row,
-      update: { amountPoisha: row.amountPoisha, invoiceNo: row.invoiceNo },
+      update: {
+        amountPoisha: row.amountPoisha,
+        invoiceNo: row.invoiceNo,
+        period: row.period,
+        // The line is put back to due. A check that paid it, or an admin who
+        // paid it, must not survive a run of the seed: the seed describes the
+        // school as it is, and the payments below put the paid lines back.
+        status: "DUE",
+        paidAt: null,
+      },
     }),
   );
 
   // The payments the admin fees table shows, converted into payments against
   // the fees of the students they belong to.
-  const paymentsByStudent = new Map<string, (typeof SEED_DEMO_DATA.adminPayments)[number]>();
+  //
+  // The receipt number comes from the mock row itself, so the same payment
+  // always carries the same receipt and running the seed twice changes
+  // nothing.
+  //
+  // The school has a name in more than one class (there is a "Tanvir Ahmed"
+  // in Class 9 and one in Class 6), so a row takes the first student of its
+  // name that no other row has taken yet.
+  const takenBy = new Set<string>();
+
+  // The mock rows and the students they belong to, worked out before anything
+  // is written: a name can be in more than one class, and the first student
+  // of that name a row has not taken yet is the one the row is about.
+  const mapped: { payment: (typeof SEED_DEMO_DATA.adminPayments)[number]; studentId: string }[] = [];
 
   for (const payment of SEED_DEMO_DATA.adminPayments) {
-    paymentsByStudent.set(payment.student, payment);
-  }
+    const student = SEED_DEMO_DATA.students.find(
+      (candidate) =>
+        candidate.name === payment.student && !takenBy.has(candidate.id),
+    );
 
-  let receiptCounter = 4471;
+    if (!student) continue;
 
-  for (const student of SEED_DEMO_DATA.students) {
-    const payment = paymentsByStudent.get(student.name);
-    if (!payment) continue;
+    takenBy.add(student.id);
 
     const studentId = studentIds.get(student.id);
     if (!studentId) continue;
 
+    mapped.push({ payment, studentId });
+  }
+
+  // The payments of the seed are written from scratch every time, so the rows
+  // an earlier run left behind are taken off first and the lines they settled
+  // are released.
+  //
+  // Without this a payment that waits for the admin could sit on a line that
+  // is already paid, and the admin could never approve it: the approval
+  // settles the lines of the payment, and a line that is paid is never
+  // settled twice.
+  const seededPayments = await prisma.payment.findMany({
+    where: { id: { startsWith: SEEDED_PAYMENT_PREFIX } },
+    select: { id: true },
+  });
+
+  const seededPaymentIds = seededPayments.map((payment) => payment.id);
+
+  // The lines the seeded payments settled are released, so a line that waits
+  // in a payment is free to be settled again.
+  const released = await prisma.paymentItem.findMany({
+    where: { paymentId: { in: seededPaymentIds } },
+    select: { feeId: true },
+  });
+
+  await prisma.paymentItem.deleteMany({
+    where: { paymentId: { in: seededPaymentIds } },
+  });
+
+  await prisma.receipt.deleteMany({
+    where: { paymentId: { in: seededPaymentIds } },
+  });
+
+  await prisma.payment.deleteMany({
+    where: { id: { in: seededPaymentIds } },
+  });
+
+  await prisma.fee.updateMany({
+    where: { id: { in: released.map((item) => item.feeId) } },
+    data: { status: "DUE", paidAt: null },
+  });
+
+  for (const { payment, studentId } of mapped) {
+    // Only the lines of the billing slot the seed writes are settled, and
+    // only the lines of this student: a payment never settles the fees of
+    // another student, and a slot the admin issued later is left alone.
     const fees = await prisma.fee.findMany({
-      where: { studentId, status: "DUE" },
+      where: { studentId, status: "DUE", period: { startsWith: SEED_PERIOD } },
       orderBy: { label: "asc" },
     });
 
     if (fees.length === 0) continue;
 
     const total = fees.reduce((sum, fee) => sum + fee.amountPoisha, 0);
-    receiptCounter += 1;
-    const receiptNo = `RCP-2026-${receiptCounter}`;
+
+    // A payment that is still due carries no receipt, so the number of one
+    // that waits is worked out from the row it came from.
+    const receiptNo =
+      payment.receipt === ""
+        ? `RCP-2026-${payment.id.replace("payment-", "")}`
+        : payment.receipt;
+
+    const isPaid = payment.status === "Paid";
+    const paidAt = payment.paidOn
+      ? isoDateTime(`${payment.paidOn}T10:00`)
+      : null;
 
     const method = methodFor(payment.method);
 
     const record = await prisma.payment.upsert({
       where: { transactionId: `TX-${receiptNo}` },
       update: {
+        studentId,
         amountPoisha: total,
         method,
-        status: payment.status === "Paid" ? "COMPLETED" : "PENDING",
-        paidAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : null,
+        status: isPaid ? "COMPLETED" : "PENDING",
+        paidAt,
       },
       create: {
         id: `payment-${receiptNo}`,
         studentId,
         amountPoisha: total,
         method,
-        status: payment.status === "Paid" ? "COMPLETED" : "PENDING",
+        status: isPaid ? "COMPLETED" : "PENDING",
         transactionId: `TX-${receiptNo}`,
-        paidAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : null,
+        paidAt,
         recordedById: adminId,
       },
     });
 
-    await prisma.receipt.upsert({
-      where: { receiptNo },
-      update: { amountPoisha: total },
-      create: {
-        id: `receipt-${receiptNo}`,
-        receiptNo,
-        paymentId: record.id,
-        studentId,
-        amountPoisha: total,
-        issuedAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : new Date(),
-      },
-    });
+    // Only a payment that was made carries a receipt. A payment that still
+    // waits for the admin has not been settled, so it has no receipt yet.
+    if (isPaid) {
+      await prisma.receipt.upsert({
+        where: { receiptNo },
+        update: { amountPoisha: total, issuedAt: paidAt ?? new Date() },
+        create: {
+          id: `receipt-${receiptNo}`,
+          receiptNo,
+          paymentId: record.id,
+          studentId,
+          amountPoisha: total,
+          issuedAt: paidAt ?? new Date(),
+        },
+      });
+    } else {
+      await prisma.receipt.deleteMany({ where: { paymentId: record.id } });
+    }
 
     for (const fee of fees) {
       await prisma.paymentItem.upsert({
@@ -650,12 +767,12 @@ export async function seedFees(
         },
       });
 
-      if (payment.status === "Paid") {
+      if (isPaid) {
         await prisma.fee.update({
           where: { id: fee.id },
           data: {
             status: "PAID",
-            paidAt: payment.paidOn ? isoDateTime(`${payment.paidOn}T10:00`) : null,
+            paidAt: paidAt ?? null,
           },
         });
       }
@@ -663,6 +780,26 @@ export async function seedFees(
   }
 
   console.log("Seed: fee structure, fees and payments written.");
+}
+
+/**
+ * The invoice number of a fee line.
+ *
+ * The number is worked out from the student and the billing slot, so the same
+ * line always carries the same invoice. A counter would shift every time the
+ * seed is run, because the students it settles change with the payments.
+ */
+function invoiceNumberFor(studentId: string, period: string): string {
+  const key = `${studentId}|${period}`;
+
+  const digest = key
+    .split("")
+    .reduce(
+      (total, character) => (total * 31 + character.charCodeAt(0)) % 1_000_000,
+      7,
+    );
+
+  return String(digest).padStart(6, "0");
 }
 
 /** The payment method of the admin table, as the enum value. */

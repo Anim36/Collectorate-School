@@ -139,6 +139,7 @@ so they can be run again without changing the school.
 | `npm run qa:admin-11b` | The admin notices, gallery, routine and calendar services, the uploads and the audit trail. |
 | `npm run qa:admin-11b-security` | The upload rules, the file names and the sanitizing of the notice body. |
 | `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP: who may run them and who may see a file. |
+| `npm run qa:admin-11c` | The admin fees, audit log and dashboard services: the filters, the pagination, the issue of a billing slot, the payment, the receipt and the export. |
 
 `npm run qa:auth-password` and `npm run qa:auth-logout` drive the debug
 browser, so it has to be up. `npm run qa:admin-roles` and

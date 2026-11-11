@@ -1,8 +1,10 @@
 # Backend handoff
 
-The app runs entirely on the mock data in `src/data`. This document names the
-table each mock file becomes, and every place where a change lives only in the
-browser's memory, together with the API endpoint it will need.
+The admin portal and the sign-in already run on the database; the public pages,
+the student portal and the teacher portal still run on the mock data in
+`src/data`. This document names the table each mock file becomes, and every
+place where a change lives only in the browser's memory, together with the API
+endpoint it will need.
 
 The endpoints below use the REST shape the rest of the app already implies:
 
@@ -25,7 +27,7 @@ when the backend arrives.
 | --- | --- | --- |
 | `src/data/admin.ts` | `users`, `classes`, `class_subjects` | `adminUsers` → `users`; `adminClasses` / `adminClassRows` → `classes`; `adminSubjectAllocations` → `class_subjects`. `adminDepartments`, `adminSubjects` and `adminTeachers` are reference lists. |
 | `src/data/admin-11b.ts` | `notices`, `notice_attachments`, `gallery_albums`, `gallery_photos`, `routines`, `routine_periods`, `calendar_events` | `adminNotices` → `notices`; `adminAlbums` → `gallery_albums`; `adminPhotoReviews` → `gallery_photos`; `adminRoutine` → `routines` + `routine_periods`; `adminCalendarRows` → `calendar_events`. |
-| `src/data/admin-11c.ts` | `payments`, `receipts`, `fee_structure`, `audit_log` | `adminPayments` → `payments`; `adminFeeStructure` → `fee_structure`; `adminAuditEvents` → `audit_log`. The receipt prefix and the invoice prefix become sequence settings, not columns. |
+| `src/data/admin-11c.ts` | `payments`, `receipts`, `fee_structure`, `audit_log` | `adminPayments` → `payments`; `adminFeeStructure` → `fee_structure`; `adminAuditEvents` → `audit_log`. The receipt prefix and the invoice prefix are worked out on the server, not stored as columns. |
 | `src/data/calendar.ts` | `calendar_events` | The public calendar reads the same `calendar_events` table as the admin calendar, filtered by `audience`. |
 | `src/data/components.ts` | — | Demo fixtures for the design-system page only. Not a table; keep it in the app or drop it with the page. |
 | `src/data/design-tokens.ts` | — | The design tokens. Not a table; they belong in the design system, not the database. |
@@ -82,11 +84,12 @@ without gaps.
 | `exams` | `id`, `name`, `year`, `term`, `published`, `academic_year_id`, `created_at` |
 | `result_sheets` | `id`, `exam_id`, `class_id`, `section_id`, `subject_id`, `status`, `saved_at`, `published_at`, `entered_by_id` |
 | `exam_results` | `id`, `exam_id`, `student_id`, `subject_id`, `result_sheet_id`, `marks`, `grade`, `gpa`, `status`, `entered_by_id` |
-| `fees` | `id`, `student_id`, `fee_structure_id`, `label`, `amount_poisha`, `due_date`, `status`, `invoice_no`, `paid_at` |
+| `fees` | `id`, `student_id`, `fee_structure_id`, `label`, `period`, `amount_poisha`, `due_date`, `status`, `invoice_no`, `paid_at` |
 | `fee_structure` | `id`, `class_id`, `academic_year_id`, `monthly_tuition_poisha`, `admission_fee_poisha`, `activities_poisha`, `due_date` |
-| `payments` | `id`, `student_id`, `amount_poisha`, `method`, `transaction_id`, `card_last4`, `status`, `paid_at`, `recorded_by_id` |
+| `payments` | `id`, `student_id`, `amount_poisha`, `method`, `transaction_id`, `card_last4`, `status`, `paid_at`, `recorded_by_id`, `reviewed_by_id`, `reviewed_at`, `review_note` |
 | `payment_items` | `id`, `payment_id`, `fee_id`, `amount_poisha` |
 | `receipts` | `id`, `receipt_no`, `payment_id`, `student_id`, `amount_poisha`, `issued_at` |
+| `receipt_counters` | `year`, `last_number` |
 | `notices` | `id`, `title`, `body`, `category`, `eyebrow`, `greeting`, `signature`, `audience`, `audiences`, `status`, `published_on`, `author_id` |
 | `notice_attachments` | `id`, `notice_id`, `name`, `format`, `size`, `url` |
 | `gallery_albums` | `id`, `title`, `slug`, `category`, `visibility`, `description`, `cover_url`, `photo_count`, `published_on` |
@@ -110,7 +113,8 @@ amount ever goes through a float.
 ## 2. The state that lives only in memory
 
 Every entry below is a change the user makes that survives a toast but not a
-reload. Each one needs an endpoint.
+reload. Each one needs an endpoint. The admin portal is not in this list any
+more: everything it does is on the database.
 
 ### 2.1 Attendance save — `src/components/teacher/teacher-attendance.tsx`
 
@@ -148,6 +152,14 @@ Only the last four digits of a card are kept: `recordPayment()` receives
 `cardLast4` and never the full number. The endpoint must not accept the full
 number either.
 
+The admin side of the fee payment is on the database now
+(`src/server/services/fees.ts`), and it already holds the rules the student
+side needs: the money is an integer number of poisha, the payment, its receipt
+and the new state of the fee lines are written in one transaction, and a
+payment a student submits waits in `PENDING` until the admin approves it. A
+student payment therefore becomes a `PENDING` row, and the admin queue is
+`listPendingPayments()`.
+
 | Need | Endpoint |
 | --- | --- |
 | List the fees of the student | `GET /api/students/me/fees` |
@@ -155,61 +167,49 @@ number either.
 | The receipt | `GET /api/receipts/:id` |
 | The fee status after the payment | `GET /api/students/me/fees` again, or a `fees` refetch after the payment resolves |
 
-### 2.4 Gallery approval — `src/components/admin/admin-gallery.tsx` and `src/components/teacher/teacher-gallery.tsx`
+### 2.4 Gallery approval — `src/components/teacher/teacher-gallery.tsx`
 
-The teacher stages the picked files as `Awaiting admin approval` in page
-state. The admin approval queue reads its own mock list, so a staged photo
-never reaches the queue. Approving or rejecting a photo changes the
-`reviews` state of the admin page only.
+The teacher still stages the picked files in page state, so a staged photo
+never reaches the queue. The admin side of it is on the database now
+(`src/server/services/gallery.ts`): the queue is a real list of the photographs
+with `status = 'PENDING'`, and approving or rejecting one writes the row.
 
 | Need | Endpoint |
 | --- | --- |
 | Stage an upload | `POST /api/gallery_photos` with the album id and the file |
 | Read the approval queue | `GET /api/gallery_photos?status=awaiting_approval` |
-| Approve or reject | `PATCH /api/gallery_photos/:id` with the status |
-| Rename an album | `PATCH /api/gallery_albums/:id` |
 
-### 2.5 User create and deactivate — `src/components/admin/admin-users.tsx`
-
-`createUser()` prepends the new account to the `accounts` state and
-`toggleStatus()` flips `status` between `Active` and `Inactive`. Both raise a
-toast and both are lost on reload.
-
-| Need | Endpoint |
-| --- | --- |
-| List the users | `GET /api/users` |
-| Create a user | `POST /api/users` with the name, role, class or department, email and the temporary password |
-| Activate or deactivate | `PATCH /api/users/:id` with the status |
-| Reset the password | `POST /api/users/:id/reset-password` |
-| Import from CSV | `POST /api/users/import` with the file |
-
-### 2.6 The other in-memory edits
+### 2.5 The other in-memory edits
 
 These are the same kind of change: they work, they raise a toast, and they do
 not survive a reload.
 
 | Where | What it changes | Endpoint |
 | --- | --- | --- |
-| `src/components/admin/admin-notices.tsx` | Publishes a notice, and publishes an existing draft | `POST /api/notices`, `PATCH /api/notices/:id` |
-| `src/components/admin/admin-fees.tsx` | Saves the fee structure of a band, and marks a payment as paid | `PATCH /api/fee_structure/:id`, `PATCH /api/payments/:id` |
-| `src/components/admin/admin-routine.tsx` | Saves and publishes the routine of a class | `PUT /api/routines`, `POST /api/routines/:id/publish` |
-| `src/components/admin/admin-calendar.tsx` | Adds a calendar event | `POST /api/calendar_events` |
-| `src/components/admin/admin-classes.tsx` | Adds a class, and assigns a subject to a class | `POST /api/classes`, `POST /api/class_subjects` |
-| `src/components/admin/admin-audit-log.tsx` | Read-only; the search, the filter and the page are view state only | `GET /api/audit_log` |
+| `src/components/teacher/teacher-gallery.tsx` | Stages an upload and lists the album preview | `POST /api/gallery_photos`, `GET /api/gallery_albums` |
+
+Everything the admin portal does — the accounts, the classes, the notices, the
+gallery, the routine, the calendar, the fees, the audit log and the dashboard —
+is on the database now, so it needs no endpoint of its own: the server actions
+in `src/app/admin/actions.ts` are the whole of it.
 
 ---
 
 ## 3. The order the work can land in
 
-1. **Read only.** `users`, `classes`, `students`, `teachers`, `notices`,
-   `gallery_albums`, `gallery_photos`, `routines`, `calendar_events`,
-   `exam_results`, `attendance`, `fees`, `payments`, `audit_log`. Every page
-   replaces its mock import with a fetch and nothing else changes.
+The admin portal is on the database now, and so is the sign-in: the accounts,
+the classes, the notices, the gallery, the routine, the calendar, the fees, the
+audit log and the dashboard all read and write the school through
+`src/app/admin/actions.ts` and the services behind it.
+
+What is left is the public pages, the student portal and the teacher portal.
+
+1. **Read only.** `students`, `teachers`, `attendance`, `exam_results`,
+   `notices`, `gallery_albums`, `gallery_photos`, `calendar_events`,
+   `fee_structure`. Every page replaces its mock import with a fetch and
+   nothing else changes.
 2. **Writes.** The in-memory edits above, one table at a time. The fee payment
    is the one to do first, because the receipt and the fees table have to agree
-   across two pages.
-3. **Uploads.** The gallery needs a file endpoint, so it comes after the
-   gallery tables exist.
-4. **Authentication.** The `users` table needs a password column and a session
-   before the login page can stop being a UI. The role on the user row decides
-   which portal the shell shows.
+   across two pages — the admin side of it already does.
+3. **Uploads.** The teacher gallery still stages its files in page state, so it
+   needs a file endpoint of its own once the album tables are read.

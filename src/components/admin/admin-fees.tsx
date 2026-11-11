@@ -8,22 +8,84 @@ import { AdminMetrics } from "@/components/admin/admin-metrics";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminTableFooter } from "@/components/admin/admin-table-footer";
 import { FeeStructureModal } from "@/components/admin/fee-structure-modal";
+import { IssueFeesModal } from "@/components/admin/issue-fees-modal";
 import { MarkAsPaidModal } from "@/components/admin/mark-as-paid-modal";
+import { PendingPaymentsModal } from "@/components/admin/pending-payments-modal";
 import { useSetPortalSection } from "@/components/layout/portal-section-context";
 import { PortalTable } from "@/components/shared/portal-table";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { adminGreeting } from "@/data/admin";
 import {
-  ADMIN_PAYMENT_PAGE_SIZE,
-  ADMIN_PAYMENT_STATUSES,
-  adminFeeMetrics,
-  adminFeeStructure,
-  adminPayments,
-  formatTaka,
-  type AdminFeeStructureRow,
-  type AdminPayment,
-} from "@/data/admin-11c";
+  approvePaymentAction,
+  exportFeesAction,
+  issueFeesAction,
+  listFeesAction,
+  recordPaymentAction,
+  rejectPaymentAction,
+  saveFeeStructureAction,
+} from "@/app/admin/actions";
+import { formatPoisha } from "@/lib/money";
+import type {
+  AdminFeeRow,
+  AdminFeeStructureRow,
+  AdminFeesData,
+  AdminPendingPayment,
+} from "@/types/admin-11c";
+
+/**
+ * The options of the payment status filter.
+ *
+ * The first one shows every payment, the rest name the state a payment can
+ * sit in.
+ */
+const STATUS_OPTIONS = [
+  "All payment statuses",
+  "Paid",
+  "Due",
+  "Overdue",
+] as const;
+
+/**
+ * The status of a payment, as the database holds it.
+ */
+const STATUS_VALUES: Record<string, string> = {
+  "All payment statuses": "ALL",
+  Paid: "PAID",
+  Due: "DUE",
+  Overdue: "OVERDUE",
+};
+
+/**
+ * The page size the payments table shows.
+ *
+ * Figma draws three payments on a page, so a page holds three rows.
+ */
+const PAGE_SIZE = 3;
+
+/**
+ * Hands a CSV file to the browser.
+ *
+ * The file is built in the browser from the text the server sent, so nothing
+ * is written to the disk of the server.
+ */
+function downloadCsv(fileName: string, csv: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
+
+export interface AdminFeesProps {
+  /** The fees the server read for the first page. */
+  initialFees: AdminFeesData | null;
+  /** The context line under the heading. */
+  greeting: string;
+}
 
 /**
  * The admin fees page.
@@ -41,108 +103,132 @@ import {
  *   blocks of two, the 35px heading, the 309px table, the 49px action, the 35px
  *   heading, a 168px filter block and the 513px payments table.
  *
- * Everything happens in memory: the fee structure, the recorded payments and
- * the receipts are held in the page state.
+ * The fee structure, the payments and the receipts are read from the
+ * database, and the search, the status filter and the pagination run on the
+ * server, so the count in the footer is the number of lines that really match.
  */
-export function AdminFees() {
+export function AdminFees({ initialFees, greeting }: AdminFeesProps) {
   const { toast } = useToast();
 
   // The top bar names the section, as Figma draws it.
   useSetPortalSection("Fees");
 
-  const [feeStructure, setFeeStructure] = React.useState<
+  const [metrics, setMetrics] = React.useState(initialFees?.metrics ?? []);
+  const [structures, setStructures] = React.useState<
     readonly AdminFeeStructureRow[]
-  >(adminFeeStructure);
-  const [payments, setPayments] = React.useState<readonly AdminPayment[]>(
-    adminPayments,
+  >(initialFees?.structures ?? []);
+  const [payments, setPayments] = React.useState<readonly AdminFeeRow[]>(
+    initialFees?.payments.rows ?? [],
   );
+  const [pending, setPending] = React.useState<readonly AdminPendingPayment[]>(
+    initialFees?.pending ?? [],
+  );
+  const [total, setTotal] = React.useState(initialFees?.payments.total ?? 0);
   const [query, setQuery] = React.useState("");
-  const [status, setStatus] = React.useState<string>(
-    ADMIN_PAYMENT_STATUSES[0],
-  );
+  const [status, setStatus] = React.useState<string>(STATUS_OPTIONS[0]);
   const [page, setPage] = React.useState(0);
   const [editingBand, setEditingBand] = React.useState<string | null>(null);
   const [recordingPayment, setRecordingPayment] = React.useState<string | null>(
     null,
   );
+  const [issuingFees, setIssuingFees] = React.useState(false);
+  const [reviewingPayments, setReviewingPayments] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
 
-  const filteredPayments = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
+  /**
+   * Reads the fees of the school from the server.
+   */
+  const load = React.useCallback(
+    async (nextPage: number) => {
+      const result = await listFeesAction({
+        query,
+        status: STATUS_VALUES[status] ?? "ALL",
+        page: nextPage,
+        pageSize: PAGE_SIZE,
+      });
 
-    return payments.filter((payment) => {
-      const matchesStatus =
-        status === ADMIN_PAYMENT_STATUSES[0] || payment.status === status;
-      if (!matchesStatus) return false;
-      if (needle === "") return true;
+      if (!result.ok) {
+        toast({
+          title: "Could not load the fees",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
 
-      return (
-        payment.student.toLowerCase().includes(needle) ||
-        payment.invoice.toLowerCase().includes(needle) ||
-        payment.receipt.toLowerCase().includes(needle)
-      );
-    });
-  }, [payments, query, status]);
+      setMetrics(result.data.metrics);
+      setStructures(result.data.structures);
+      setPayments(result.data.payments.rows);
+      setPending(result.data.pending);
+      setTotal(result.data.payments.total);
+    },
+    [query, status, toast],
+  );
 
-  // A filter change starts the list again from the first page.
+  // The list is read again when the filters change.
   React.useEffect(() => {
-    setPage(0);
-  }, [query, status]);
+    const timer = setTimeout(() => {
+      setPage(0);
+      void load(0);
+    }, 250);
 
-  const pageCount = Math.max(
-    1,
-    Math.ceil(filteredPayments.length / ADMIN_PAYMENT_PAGE_SIZE),
-  );
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const visiblePayments = filteredPayments.slice(
-    currentPage * ADMIN_PAYMENT_PAGE_SIZE,
-    currentPage * ADMIN_PAYMENT_PAGE_SIZE + ADMIN_PAYMENT_PAGE_SIZE,
-  );
 
   const feeColumns = [
-    { header: "Class", cell: (row: AdminFeeStructureRow) => row.classBand },
+    { header: "Class", cell: (row: AdminFeeStructureRow) => row.className },
     {
       header: "Monthly tuition",
-      cell: (row: AdminFeeStructureRow) => formatTaka(row.monthlyTuition),
+      cell: (row: AdminFeeStructureRow) =>
+        formatPoisha(row.monthlyTuitionPoisha),
     },
     {
       header: "Admission fee",
-      cell: (row: AdminFeeStructureRow) => formatTaka(row.admissionFee),
+      cell: (row: AdminFeeStructureRow) => formatPoisha(row.admissionFeePoisha),
     },
     {
       header: "Activities",
-      cell: (row: AdminFeeStructureRow) => formatTaka(row.activities),
+      cell: (row: AdminFeeStructureRow) => formatPoisha(row.activitiesPoisha),
     },
   ];
 
   // The invoice and the receipt carry the longest values, so they take a
   // wider share of the table and the row keeps its 44px height.
-  const paymentColumnWidths = ["18%", "20%", "14%", "12%", "12%", "24%"];
+  const paymentColumnWidths = ["16%", "22%", "13%", "12%", "12%", "25%"];
 
-  const feeRecords = feeStructure.map((row) => ({
+  const feeRecords = structures.map((row) => ({
     id: row.id,
     lines: [
-      { label: "Class", value: row.classBand },
-      { label: "Monthly tuition", value: formatTaka(row.monthlyTuition) },
-      { label: "Admission fee", value: formatTaka(row.admissionFee) },
-      { label: "Activities", value: formatTaka(row.activities) },
+      { label: "Class", value: row.className },
+      {
+        label: "Monthly tuition",
+        value: formatPoisha(row.monthlyTuitionPoisha),
+      },
+      {
+        label: "Admission fee",
+        value: formatPoisha(row.admissionFeePoisha),
+      },
+      { label: "Activities", value: formatPoisha(row.activitiesPoisha) },
     ],
   }));
 
   const paymentColumns = [
-    { header: "Student", cell: (row: AdminPayment) => row.student },
-    { header: "Invoice", cell: (row: AdminPayment) => row.invoice },
-    { header: "Amount", cell: (row: AdminPayment) => row.amount },
-    { header: "Status", cell: (row: AdminPayment) => row.status },
+    { header: "Student", cell: (row: AdminFeeRow) => row.student },
+    { header: "Invoice", cell: (row: AdminFeeRow) => row.invoice },
+    { header: "Amount", cell: (row: AdminFeeRow) => row.amount },
+    { header: "Status", cell: (row: AdminFeeRow) => row.status },
     {
       header: "Method",
-      cell: (row: AdminPayment) =>
-        row.method === "" ? "—" : row.method,
+      cell: (row: AdminFeeRow) => (row.method === "" ? "—" : row.method),
     },
     {
       // The receipt is the last column: it holds the receipt number of a paid
       // payment and the action for one that is still due.
       header: "Receipt",
-      cell: (row: AdminPayment) =>
+      cell: (row: AdminFeeRow) =>
         row.receipt === "" ? (
           <RowAction onClick={() => setRecordingPayment(row.id)}>
             Mark as paid
@@ -153,7 +239,7 @@ export function AdminFees() {
     },
   ];
 
-  const paymentRecords = visiblePayments.map((row) => ({
+  const paymentRecords = payments.map((row) => ({
     id: row.id,
     lines: [
       { label: "Student", value: row.student },
@@ -169,75 +255,229 @@ export function AdminFees() {
             <RowAction onClick={() => setRecordingPayment(row.id)}>
               Mark as paid
             </RowAction>
+          ) : row.method === "" ? (
+            "—"
           ) : (
-            row.method === "" ? "—" : row.method
+            row.method
           ),
       },
     ],
   }));
 
-  const saveFeeStructure = (values: {
+  /**
+   * Saves the edited fee structure of a class.
+   */
+  const saveFeeStructure = async (values: {
     id: string;
-    monthlyTuition: number;
-    admissionFee: number;
-    activities: number;
-    dueOn: string;
+    monthlyTuitionPoisha: number;
+    admissionFeePoisha: number;
+    activitiesPoisha: number;
+    dueDate: string;
   }) => {
-    setFeeStructure((previous) =>
-      previous.map((row) => (row.id === values.id ? { ...row, ...values } : row)),
-    );
+    if (busy) return;
+
+    setBusy(true);
+
+    const result = await saveFeeStructureAction(values);
+
+    setBusy(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Fee structure not saved",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setEditingBand(null);
+    await load(page);
 
     toast({
       title: "Fee structure saved",
-      description: `The fees of the band are now ${formatTaka(
-        values.monthlyTuition,
-      )} tuition and ${formatTaka(values.admissionFee)} admission.`,
+      description: `The fees of the class are now ${formatPoisha(
+        values.monthlyTuitionPoisha,
+      )} tuition and ${formatPoisha(values.admissionFeePoisha)} admission.`,
     });
   };
 
-  const recordPayment = (values: {
-    receipt: string;
-    method: AdminPayment["method"];
+  /**
+   * Records the payment the admin took at the desk.
+   */
+  const recordPayment = async (values: {
+    method: string;
+    transactionId?: string;
+    cardLast4?: string;
     paidOn: string;
   }) => {
-    if (!recordingPayment) return;
+    if (!recordingPayment || busy) return;
 
     const paid = payments.find((row) => row.id === recordingPayment);
     if (!paid) return;
 
-    setPayments((previous) =>
-      previous.map((row) =>
-        row.id === recordingPayment
-          ? {
-              ...row,
-              status: "Paid",
-              method: values.method,
-              receipt: values.receipt,
-              paidOn: values.paidOn,
-            }
-          : row,
-      ),
-    );
+    setBusy(true);
+
+    const result = await recordPaymentAction({
+      feeIds: [paid.id],
+      method: values.method,
+      transactionId: values.transactionId,
+      cardLast4: values.cardLast4,
+      amountPoisha: paid.amountPoisha,
+      paidOn: values.paidOn,
+    });
+
+    setBusy(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Payment not recorded",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     setRecordingPayment(null);
+    await load(page);
 
     toast({
       title: "Payment recorded",
-      description: `${paid.student} paid ${paid.amount}. Receipt ${values.receipt}.`,
+      description: `${paid.student} paid ${paid.amount}. Receipt ${result.data.receiptNo}.`,
     });
   };
 
-  const editingRow = feeStructure.find((row) => row.id === editingBand);
+  /**
+   * Issues the fees of a billing slot to the students of a class.
+   */
+  const issueFees = async (values: {
+    classId: string;
+    period: string;
+    lines: string[];
+  }) => {
+    if (busy) return;
+
+    setBusy(true);
+
+    const result = await issueFeesAction(values);
+
+    setBusy(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Fees not issued",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIssuingFees(false);
+    await load(page);
+
+    toast({
+      title: "Fees issued",
+      description:
+        result.data.issued === 0
+          ? "Every student of that class already holds those fees."
+          : `${result.data.issued} fee line(s) written for ${values.period}.`,
+    });
+  };
+
+  /**
+   * Approves a payment a student submitted.
+   */
+  const approvePayment = async (paymentId: string) => {
+    if (busy) return;
+
+    setBusy(true);
+
+    const result = await approvePaymentAction(paymentId);
+
+    setBusy(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Payment not approved",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await load(page);
+
+    toast({
+      title: "Payment approved",
+      description: `Receipt ${result.data.receiptNo} was issued.`,
+    });
+  };
+
+  /**
+   * Rejects a payment a student submitted.
+   */
+  const rejectPayment = async (paymentId: string, reason: string) => {
+    if (busy) return;
+
+    setBusy(true);
+
+    const result = await rejectPaymentAction({ paymentId, reason });
+
+    setBusy(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Payment not rejected",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setReviewingPayments(false);
+    await load(page);
+
+    toast({
+      title: "Payment rejected",
+      description: "The student has been told why it was rejected.",
+    });
+  };
+
+  /**
+   * Downloads the payments that match the filters as a CSV file.
+   */
+  const exportPayments = async () => {
+    const result = await exportFeesAction({
+      query,
+      status: STATUS_VALUES[status] ?? "ALL",
+    });
+
+    if (!result.ok) {
+      toast({
+        title: "Export failed",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    downloadCsv(result.data.fileName, result.data.csv);
+
+    toast({
+      title: "Export ready",
+      description: `${total} payment record(s) are ready to export.`,
+    });
+  };
+
+  const editingRow = structures.find((row) => row.id === editingBand);
   const recordingRow = payments.find((row) => row.id === recordingPayment);
 
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 md:px-8 md:py-8">
-      <AdminPageHeader title="Fees" description={adminGreeting.context} />
+      <AdminPageHeader title="Fees" description={greeting} />
 
       {/* The dues summary. */}
-      <AdminMetrics metrics={adminFeeMetrics} />
+      <AdminMetrics metrics={metrics} />
 
       <h3 className="text-title font-bold leading-[1.45] text-ink">
         Fee structure
@@ -246,20 +486,31 @@ export function AdminFees() {
       <PortalTable
         caption="Fee structure"
         columns={feeColumns}
-        rows={feeStructure}
+        rows={structures}
         mobileRecords={feeRecords}
         mobileRecordSize="uniform"
-        footer={<AdminTableFooter records={feeStructure.length} />}
+        footer={<AdminTableFooter records={structures.length} />}
       />
 
-      <Button
-        type="button"
-        variant="secondary"
-        className="h-[49px] w-[185px] shrink-0"
-        onClick={() => setEditingBand(feeStructure[0]?.id ?? null)}
-      >
-        Edit fee structure
-      </Button>
+      <div className="flex w-full flex-wrap items-center gap-4">
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-[49px] w-[185px] shrink-0"
+          onClick={() => setEditingBand(structures[0]?.id ?? null)}
+        >
+          Edit fee structure
+        </Button>
+
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-[49px] w-[150px] shrink-0"
+          onClick={() => setIssuingFees(true)}
+        >
+          Issue fees
+        </Button>
+      </div>
 
       <h3 className="text-title font-bold leading-[1.45] text-ink">Payments</h3>
 
@@ -268,19 +519,19 @@ export function AdminFees() {
         onQueryChange={setQuery}
         status={status}
         onStatusChange={setStatus}
-        statusOptions={ADMIN_PAYMENT_STATUSES}
+        statusOptions={STATUS_OPTIONS}
       />
 
       <PortalTable
         caption="Payments"
         columns={paymentColumns}
         columnWidths={paymentColumnWidths}
-        rows={visiblePayments}
+        rows={payments}
         mobileRecords={paymentRecords}
         mobileRecordSize="uniform"
         footer={
           <AdminTableFooter
-            records={visiblePayments.length}
+            records={payments.length}
             page={currentPage}
             pageCount={pageCount}
             onPageChange={setPage}
@@ -288,27 +539,33 @@ export function AdminFees() {
         }
       />
 
-      <Button
-        type="button"
-        variant="secondary"
-        className="h-[49px] w-[182px] shrink-0"
-        onClick={() =>
-          toast({
-            title: "Export ready",
-            description: `${filteredPayments.length} payment record(s) are ready to export.`,
-          })
-        }
-      >
-        <Download aria-hidden className="size-4" />
-        Export payments
-      </Button>
+      <div className="flex w-full flex-wrap items-center gap-4">
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-[49px] w-[182px] shrink-0"
+          onClick={() => setReviewingPayments(true)}
+        >
+          Payments to verify
+        </Button>
+
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-[49px] w-[182px] shrink-0"
+          onClick={() => void exportPayments()}
+        >
+          <Download aria-hidden className="size-4" />
+          Export payments
+        </Button>
+      </div>
 
       {editingRow && editingBand ? (
         <FeeStructureModal
-          rows={feeStructure}
+          rows={structures}
           initialRowId={editingBand}
           onClose={() => setEditingBand(null)}
-          onSave={saveFeeStructure}
+          onSave={(values) => void saveFeeStructure(values)}
         />
       ) : null}
 
@@ -316,7 +573,27 @@ export function AdminFees() {
         <MarkAsPaidModal
           payment={recordingRow}
           onClose={() => setRecordingPayment(null)}
-          onSave={recordPayment}
+          onSave={(values) => void recordPayment(values)}
+        />
+      ) : null}
+
+      {issuingFees ? (
+        <IssueFeesModal
+          rows={structures}
+          onClose={() => setIssuingFees(false)}
+          onIssue={(values) => void issueFees(values)}
+        />
+      ) : null}
+
+      {reviewingPayments ? (
+        <PendingPaymentsModal
+          payments={pending}
+          busy={busy}
+          onClose={() => setReviewingPayments(false)}
+          onApprove={(paymentId) => void approvePayment(paymentId)}
+          onReject={(paymentId, reason) =>
+            void rejectPayment(paymentId, reason)
+          }
         />
       ) : null}
     </div>

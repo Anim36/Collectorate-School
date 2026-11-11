@@ -26,6 +26,7 @@
     "qa:admin-11b": "tsx scripts/qa/check-admin-11b.ts",
     "qa:admin-11b-security": "tsx scripts/qa/check-admin-11b-security.ts",
     "qa:admin-11b-http": "tsx scripts/qa/check-admin-11b-http.ts",
+    "qa:admin-11c": "tsx scripts/qa/check-admin-11c.ts",
     "qa:restore": "tsx scripts/qa/restore-seed-state.ts",
     "qa:compare-seed": "tsx scripts/qa/seed-compare-account.ts",
     "qa:compare-seed:clean": "tsx scripts/qa/seed-compare-account.ts --clean"
