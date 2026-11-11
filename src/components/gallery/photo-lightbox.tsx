@@ -5,7 +5,7 @@ import * as React from "react";
 import { X } from "lucide-react";
 
 import { useFocusTrap } from "@/hooks/use-focus-trap";
-import type { GalleryPhoto } from "@/data/gallery";
+import type { GalleryPhoto } from "@/types/gallery";
 
 export interface PhotoLightboxProps {
   /** The album the photographs belong to. */

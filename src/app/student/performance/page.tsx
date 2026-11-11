@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { StudentPerformance } from "@/components/student/student-performance";
+import { getStudentPerformance } from "@/server/services/student-results";
 
 export const metadata: Metadata = {
   title: "Performance",
@@ -13,6 +14,13 @@ export const metadata: Metadata = {
  * and the matching dark frames): the metric row, the marks chart, the
  * subject-wise bars and the strength notes.
  */
-export default function StudentPerformancePage() {
-  return <StudentPerformance />;
+export default async function StudentPerformancePage() {
+  // The marks come from the published results of the signed-in student.
+  const performance = await getStudentPerformance();
+
+  if (!performance) {
+    return null;
+  }
+
+  return <StudentPerformance data={performance} />;
 }

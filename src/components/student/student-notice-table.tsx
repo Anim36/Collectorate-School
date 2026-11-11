@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
-import type { StudentNoticeRow } from "@/data/student";
+import type { StudentNoticeRow } from "@/types/student";
 
 export interface StudentNoticeTableProps {
   /** Notice rows rendered in the table. */
@@ -80,7 +80,7 @@ export function StudentNoticeTable({ rows, className }: StudentNoticeTableProps)
                 )}
               >
                 <Link
-                  href={`/notice/${row.id}`}
+                  href={`/student/notice/${row.id}`}
                   className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {row.title}
@@ -107,7 +107,7 @@ export function StudentNoticeTable({ rows, className }: StudentNoticeTableProps)
             <p className="mt-1.5 text-caption leading-[1.45] text-ink">
               Notice:&nbsp;&nbsp;
               <Link
-                href={`/notice/${row.id}`}
+                href={`/student/notice/${row.id}`}
                 className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {row.title}

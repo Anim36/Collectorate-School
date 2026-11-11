@@ -6,22 +6,18 @@ import { ArrowLeft } from "lucide-react";
 import { AlbumGrid } from "@/components/gallery/album-grid";
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { Button } from "@/components/ui/button";
-import { findStudentGalleryAlbum, studentGalleryAlbums } from "@/data/gallery";
+import { getStudentGalleryAlbum } from "@/server/services/student-content";
 
 interface StudentAlbumDetailPageProps {
   /** Route parameter carrying the album identifier. */
   params: Promise<{ albumId: string }>;
 }
 
-export function generateStaticParams() {
-  return studentGalleryAlbums.map((album) => ({ albumId: album.id }));
-}
-
 export async function generateMetadata({
   params,
 }: StudentAlbumDetailPageProps): Promise<Metadata> {
   const { albumId } = await params;
-  const album = findStudentGalleryAlbum(albumId);
+  const album = await getStudentGalleryAlbum(albumId);
 
   if (!album) {
     return { title: "Album not found" };
@@ -40,12 +36,16 @@ export async function generateMetadata({
  * public album detail layout (light 2:2207 / 2:2269 / 2:2325): the
  * photograph grid, with the lightbox opening over it. Only the surrounding
  * chrome changes — the portal shell instead of the public navbar and footer.
+ *
+ * The album is read from the database. An album that is not public — or one
+ * that holds no approved photograph — is reported the same way as one that
+ * does not exist, so an id cannot be probed.
  */
 export default async function StudentAlbumDetailPage({
   params,
 }: StudentAlbumDetailPageProps) {
   const { albumId } = await params;
-  const album = findStudentGalleryAlbum(albumId);
+  const album = await getStudentGalleryAlbum(albumId);
 
   if (!album) {
     notFound();

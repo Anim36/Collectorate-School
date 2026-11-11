@@ -3,6 +3,13 @@ import { StudentPageHeader } from "@/components/student/student-page-header";
 import { StudentIdentity } from "@/components/student/student-identity";
 import { StudentProfileDetails } from "@/components/student/student-profile-details";
 import { cn } from "@/lib/utils";
+import type { StudentProfile } from "@/types/student";
+
+export interface StudentProfileCardProps {
+  /** The profile of the signed-in student, read from the database. */
+  profile: StudentProfile;
+  className?: string;
+}
 
 /**
  * Student profile page body.
@@ -15,7 +22,10 @@ import { cn } from "@/lib/utils";
  * - Mobile (375): 24px padding, a 111px greeting and eight single-field
  *   rows.
  */
-export function StudentProfileCard({ className }: { className?: string }) {
+export function StudentProfileCard({
+  profile,
+  className,
+}: StudentProfileCardProps) {
   return (
     <div
       className={cn(
@@ -28,9 +38,9 @@ export function StudentProfileCard({ className }: { className?: string }) {
         description="Your school life, clearly organised."
       />
 
-      <StudentIdentity />
+      <StudentIdentity profile={profile} />
 
-      <StudentProfileDetails />
+      <StudentProfileDetails profile={profile} />
 
       <Button type="button" className="h-[47px] w-[200px] px-0">
         Request profile edit

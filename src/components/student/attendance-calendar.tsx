@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
-import type { AttendanceStatus } from "@/data/student";
+import type { StudentAttendanceStatus } from "@/types/student";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -12,7 +12,7 @@ interface CalendarCell {
   /** Day of the month, or null for a day outside the month. */
   day: number | null;
   /** Attendance status of the day, when the month carries one. */
-  status: AttendanceStatus | null;
+  status: StudentAttendanceStatus | null;
 }
 
 /**
@@ -22,7 +22,7 @@ interface CalendarCell {
 function buildMonthGrid(
   year: number,
   month: number,
-  statuses: ReadonlyMap<number, AttendanceStatus>,
+  statuses: ReadonlyMap<number, StudentAttendanceStatus>,
 ): CalendarCell[] {
   const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -33,7 +33,18 @@ function buildMonthGrid(
   }
 
   for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push({ day, status: statuses.get(day) ?? null });
+    const recorded = statuses.get(day);
+
+    // A day the school does not teach on is a weekly holiday, so it shows a
+    // dash rather than a letter. The weekend days of the month are the ones
+    // the school never marks.
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    const weeklyHoliday = weekday === 5 || weekday === 6;
+
+    cells.push({
+      day,
+      status: recorded ?? (weeklyHoliday ? "holiday" : null),
+    });
   }
 
   while (cells.length < 35) {
@@ -47,7 +58,7 @@ function buildMonthGrid(
 }
 
 /** The letter Figma prints in a day cell for each attendance status. */
-function statusLetter(status: AttendanceStatus): string {
+function statusLetter(status: StudentAttendanceStatus): string {
   switch (status) {
     case "present":
       return "P";
@@ -63,7 +74,7 @@ function statusLetter(status: AttendanceStatus): string {
 }
 
 /** The colour class of the letter that marks a day's status. */
-function statusClass(status: AttendanceStatus | null): string {
+function statusClass(status: StudentAttendanceStatus | null): string {
   switch (status) {
     case "present":
       return "text-success";
@@ -84,7 +95,7 @@ export interface AttendanceCalendarProps {
   /** Month number, 1–12. */
   month: number;
   /** Attendance status of each day of the month. */
-  statuses: ReadonlyMap<number, AttendanceStatus>;
+  statuses: ReadonlyMap<number, StudentAttendanceStatus>;
   className?: string;
 }
 

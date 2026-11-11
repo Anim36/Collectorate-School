@@ -3,12 +3,12 @@ import { StudentWelcome } from "@/components/student/student-welcome";
 import { StudentMetrics } from "@/components/student/student-metrics";
 import { StudentAttendanceChart } from "@/components/student/student-attendance-chart";
 import { StudentNoticeTable } from "@/components/student/student-notice-table";
-import {
-  attendanceTrend,
-  studentGreeting,
-  studentMetrics,
-  studentNoticeRows,
-} from "@/data/student";
+import type { StudentDashboardData } from "@/types/student";
+
+export interface StudentDashboardProps {
+  /** The dashboard of the signed-in student, read from the database. */
+  data: StudentDashboardData;
+}
 
 /**
  * Student dashboard body.
@@ -25,25 +25,25 @@ import {
  * the four metric cards on a single line. On mobile it is a plain stack, so
  * the two metric rows become blocks of their own.
  */
-export function StudentDashboard() {
+export function StudentDashboard({ data }: StudentDashboardProps) {
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 md:px-8 md:py-8">
       <StudentPageHeader
-        title={studentGreeting.headline}
-        description={studentGreeting.context}
+        title={data.greeting.headline}
+        description={data.greeting.context}
       />
 
       <StudentWelcome />
 
-      <StudentMetrics metrics={studentMetrics} />
+      <StudentMetrics metrics={data.metrics} />
 
-      <StudentAttendanceChart points={attendanceTrend} />
+      <StudentAttendanceChart points={data.attendanceTrend} />
 
       <h3 className="text-title font-bold leading-[1.45] text-ink">
         Recent notices
       </h3>
 
-      <StudentNoticeTable rows={studentNoticeRows} />
+      <StudentNoticeTable rows={data.notices} />
     </div>
   );
 }

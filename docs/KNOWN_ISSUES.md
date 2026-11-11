@@ -144,23 +144,54 @@ Two fixes are needed, and both belong in **B7**:
   The QA cleanup (`scripts/qa/restore-seed-state.ts`) has to run the same
   sweep, so a check that is interrupted does not leave a file behind.
 
-## The student still pays in the browser, so the admin queue only holds the seed's rows
+## A student payment waits for the school, because the server cannot know the money moved
 
-The admin side of the fee payment is on the database and on the screen: a
-payment a student submits is a `PENDING` row, and the "Payments to verify"
-action opens the queue, where the admin approves one — the receipt is written
-and the fee lines are marked as paid — or rejects it with a reason that is
-kept with the payment (`src/server/services/fees.ts`).
+The student side of the fee payment is on the database now: the payment method
+page and the payment modal write a `PENDING` payment with its `payment_items`,
+the amount is worked out on the server from the fee lines the payment settles,
+and the fees page, the dashboard and the payment history all read the student's
+own rows (`src/server/services/student-fees.ts`).
 
-The student side is not there yet. The payment method page still records the
-payment into the module-level `paymentStore` in `src/data/student.ts`, so
-nothing ever reaches the database as a `PENDING` payment. The seed writes a
-few `PENDING` rows, so the queue the admin reads is the one the seed wrote: a
-payment a student really makes never reaches it.
+The decision that shapes it: **without a payment gateway the server cannot know
+that a payment really happened, so a transaction ID a student types never marks
+a fee as paid.** A pending payment becomes `COMPLETED` — and only then is the
+fee marked `PAID` and the receipt written — in exactly two places:
 
-What is missing belongs to the next step:
+1. an admin approves the payment in the "Payments to verify" queue
+   (`approvePayment()` in `src/server/services/fees.ts`), or
+2. a payment gateway confirms the payment, in the deployment phase.
 
-- The student needs a server action that writes a `PENDING` payment and its
-  `payment_items`, and the fees page has to read the student's own fee lines
-  from the database instead of the mock list.
+Until the gateway exists, the admin is the confirmation. A student payment
+therefore shows its fee lines as **Pending verification**, and the receipt page
+(`/student/fees/receipt/[id]`) answers 404 for every payment that is not
+`COMPLETED` — so a student cannot reach a receipt that does not exist yet, and
+cannot reach the receipt of another student either.
+
+### The UI copy that changed with the decision
+
+Exactly these strings changed. Nothing else in the student portal was reworded
+for the decision.
+
+| Where | Before | After |
+| --- | --- | --- |
+| The success toast after a payment is submitted (`src/components/student/student-payment-method.tsx`) | The payment jumped straight to the receipt page, which showed "✓ Payment successful" | "Payment submitted. The school will confirm it shortly." — the student stays on the fees page |
+| The note under the payment method options on the payment method page | "You'll continue to your payment provider to authorise the transaction." | "Your payment is sent to the school office. It is confirmed there, and the receipt appears once the school has approved it." |
+| The note under the payment method options in the fees page modal | "You'll continue to your payment provider to authorise the transaction." | "Your payment is sent to the school office, where it is confirmed before the receipt is written." |
+| The note under the pay button on the payment method page | "This is a demo. No money is charged and no card number is stored." | "Your payment is sent to the school office for verification. Only the last four digits of a card are kept." |
+| The card field on the payment method page | "Card number", "Name on card", "Expiry" and "CVC" were asked for | "Last four digits of the card" is the only field. The card number, the name and the security code are never asked for, so they cannot be stored |
+| The fee line badge in the due-fees table | — | A line that waits for the school shows a "Pending" badge |
+| The receipt column of the payment history table | Every row linked to a receipt | A payment that still waits shows its status instead of a link, because there is no receipt yet |
+
+The receipt page itself is unchanged: it still prints on A4 with the existing
+print stylesheet, and the receipt number is still unique, because it comes from
+the `receipt_counters` counter when the admin approves the payment.
+
+### What is still missing
+
+- There is no gateway yet, so the confirmation is the admin. When the gateway
+  arrives it confirms the payment instead, and the pending state becomes a
+  short wait rather than a queue an officer works through.
+- The student cannot see why a payment was rejected beyond the status in the
+  payment history. The reason is kept with the payment (`review_note`), and
+  the copy that tells the student about it belongs to the same step.
 

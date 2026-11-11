@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
-import type { Notice } from "@/data/notices";
+import type { NoticeArticleData } from "@/types/notice";
 
 export interface NoticeArticleProps {
   /** The notice the article renders. */
-  notice: Notice;
+  notice: NoticeArticleData;
   className?: string;
 }
 

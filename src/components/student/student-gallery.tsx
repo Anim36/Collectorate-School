@@ -5,7 +5,13 @@ import Link from "next/link";
 import { GalleryCard } from "@/components/shared/gallery-card";
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { cn } from "@/lib/utils";
-import { studentGalleryAlbums } from "@/data/gallery";
+import type { StudentGalleryAlbum } from "@/types/student";
+
+export interface StudentGalleryProps {
+  /** The albums the student may see, read from the database. */
+  albums: readonly StudentGalleryAlbum[];
+  className?: string;
+}
 
 /**
  * Student gallery album list.
@@ -25,7 +31,7 @@ import { studentGalleryAlbums } from "@/data/gallery";
  * The albums are separate blocks rather than list items so that each one
  * measures as the frame Figma draws.
  */
-export function StudentGallery({ className }: { className?: string }) {
+export function StudentGallery({ albums, className }: StudentGalleryProps) {
   return (
     <div
       className={cn(
@@ -38,7 +44,7 @@ export function StudentGallery({ className }: { className?: string }) {
         description="Your school life, clearly organised."
       />
 
-      {studentGalleryAlbums.map((album) => (
+      {albums.map((album) => (
         <Link
           key={album.id}
           href={`/student/gallery/${album.id}`}

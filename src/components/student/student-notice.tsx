@@ -8,16 +8,10 @@ import { TablePagination } from "@/components/shared/table-pagination";
 import { StudentNoticeEmptyState } from "@/components/student/student-notice-empty-state";
 import { StudentNoticeFilters } from "@/components/student/student-notice-filters";
 import { StudentPageHeader } from "@/components/student/student-page-header";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import {
-  formatLongNoticeDate,
-  noticeCategories,
-  studentNoticeDefaultRange,
-  studentNotices,
-  type Notice,
-} from "@/data/notices";
-
-const PAGE_SIZE = 3;
+import { listStudentNoticesAction } from "@/app/student/actions";
+import type { StudentNoticeBoard, StudentNoticeRow } from "@/types/student";
 
 /**
  * Student notice board.
@@ -36,53 +30,90 @@ const PAGE_SIZE = 3;
  * own. They follow the public board's filter pattern — Figma "Notice filters"
  * (2:1507–2:1518): a category dropdown and a date range, laid out in one row
  * from tablet up and stacked on mobile — with a free-text search in front.
+ *
+ * The notices come from the database, and the filters run on the server: the
+ * page count under the table is the number of notices that really match.
  */
-export function StudentNotice({ className }: { className?: string }) {
+export function StudentNotice({
+  board,
+  className,
+}: {
+  /** The notice board the server read. */
+  board: StudentNoticeBoard;
+  className?: string;
+}) {
+  const { toast } = useToast();
+
   const [query, setQuery] = React.useState("");
-  const [category, setCategory] = React.useState<string>(noticeCategories[0]);
-  const [fromDate, setFromDate] = React.useState<string>(
-    studentNoticeDefaultRange.from,
+  const [category, setCategory] = React.useState<string>(
+    board.categories[0] ?? "All categories",
   );
-  const [toDate, setToDate] = React.useState<string>(
-    studentNoticeDefaultRange.to,
+  const [fromDate, setFromDate] = React.useState<string>("");
+  const [toDate, setToDate] = React.useState<string>("");
+  const [page, setPage] = React.useState(board.page);
+  const [rows, setRows] = React.useState(board.rows);
+  const [total, setTotal] = React.useState(board.total);
+  const [pageCount, setPageCount] = React.useState(board.pageCount);
+
+  // The category the filter treats as "no category", so it is not sent as a
+  // filter and the board keeps every notice.
+  const allCategories = board.categories[0] ?? "All categories";
+
+  // The board the server read carries the filters it was read with, so the
+  // controls start on the values that produced it.
+  React.useEffect(() => {
+    setPage(board.page);
+  }, [board.page]);
+
+  /**
+   * Reads the board from the server with the filters that are set.
+   *
+   * The page is sent along, so the page the reader is on is the page the
+   * server reads.
+   */
+  const load = React.useCallback(
+    async (nextPage: number) => {
+      const result = await listStudentNoticesAction({
+        query: query.trim() || undefined,
+        category: category === allCategories ? undefined : category,
+        from: fromDate || undefined,
+        to: toDate || undefined,
+        page: nextPage,
+      });
+
+      if (!result.ok) {
+        toast({
+          title: "Could not load the notices",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setRows(result.data.rows);
+      setTotal(result.data.total);
+      setPageCount(result.data.pageCount);
+    },
+    [query, category, fromDate, toDate, allCategories, toast],
   );
-  const [page, setPage] = React.useState(0);
 
-  const filteredNotices = React.useMemo(() => {
-    const from = fromDate ? Date.parse(fromDate) : Number.NEGATIVE_INFINITY;
-    const to = toDate ? Date.parse(toDate) : Number.POSITIVE_INFINITY;
-    const needle = query.trim().toLowerCase();
+  // The board is read again when the filters change. The search waits for a
+  // pause in the typing, so a word does not cost a query per letter.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(0);
+      void load(0);
+    }, 250);
 
-    return studentNotices.filter((notice) => {
-      const published = Date.parse(notice.publishedOn);
-      const matchesCategory =
-        category === noticeCategories[0] || notice.category === category;
-      const matchesRange = published >= from && published <= to;
-      const matchesQuery =
-        needle === "" ||
-        notice.title.toLowerCase().includes(needle) ||
-        notice.category.toLowerCase().includes(needle) ||
-        notice.body.join(" ").toLowerCase().includes(needle);
+    return () => clearTimeout(timer);
+  }, [load]);
 
-      return matchesCategory && matchesRange && matchesQuery;
-    });
-  }, [category, fromDate, toDate, query]);
-
-  // The page is clamped rather than reset in an effect, so a filter change
-  // never renders a frame of the previous page.
-  const pageCount = Math.max(1, Math.ceil(filteredNotices.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount - 1);
-
-  const visibleNotices = filteredNotices.slice(
-    currentPage * PAGE_SIZE,
-    currentPage * PAGE_SIZE + PAGE_SIZE,
-  );
   const columns = [
-    { header: "Date", cell: (notice: Notice) => notice.shortLabel },
-    { header: "Category", cell: (notice: Notice) => notice.category },
+    { header: "Date", cell: (notice: StudentNoticeRow) => notice.date },
+    { header: "Category", cell: (notice: StudentNoticeRow) => notice.category },
     {
       header: "Notice",
-      cell: (notice: Notice) => (
+      cell: (notice: StudentNoticeRow) => (
         <Link
           href={`/student/notice/${notice.id}`}
           className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -93,14 +124,18 @@ export function StudentNotice({ className }: { className?: string }) {
     },
   ];
 
-  const mobileRecords = visibleNotices.map((notice) => ({
+  const mobileRecords = rows.map((notice) => ({
     id: notice.id,
     lines: [
-      { label: "Date", value: notice.shortLabel },
+      { label: "Date", value: notice.date },
       { label: "Category", value: notice.category },
       { label: "Notice", value: notice.title },
     ],
   }));
+
+  // The page is clamped rather than reset in an effect, so a filter change
+  // never renders a frame of the previous page.
+  const currentPage = Math.min(page, Math.max(1, pageCount) - 1);
 
   return (
     <div
@@ -119,26 +154,29 @@ export function StudentNotice({ className }: { className?: string }) {
         onQueryChange={setQuery}
         category={category}
         onCategoryChange={setCategory}
-        categories={noticeCategories}
+        categories={board.categories}
         fromDate={fromDate}
         onFromDateChange={setFromDate}
-        fromDateLabel={formatLongNoticeDate(fromDate)}
+        fromDateLabel={formatFilterDate(fromDate)}
         toDate={toDate}
         onToDateChange={setToDate}
-        toDateLabel={formatLongNoticeDate(toDate)}
+        toDateLabel={formatFilterDate(toDate)}
       />
 
       <PortalTable
         caption="Published notices"
         columns={columns}
-        rows={visibleNotices}
+        rows={rows}
         mobileRecords={mobileRecords}
         footer={
           <TablePagination
-            totalRecords={filteredNotices.length}
+            totalRecords={total}
             page={currentPage}
-            pageSize={PAGE_SIZE}
-            onPageChange={setPage}
+            pageSize={board.pageSize}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void load(nextPage);
+            }}
           />
         }
       />
@@ -146,4 +184,23 @@ export function StudentNotice({ className }: { className?: string }) {
       <StudentNoticeEmptyState />
     </div>
   );
+}
+
+/**
+ * Formats a date the way the filter shows it, e.g. "01 October 2026".
+ *
+ * An empty date shows a dash, so the control never reads "Invalid Date".
+ */
+function formatFilterDate(isoDate: string): string {
+  if (!isoDate) return "—";
+
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }

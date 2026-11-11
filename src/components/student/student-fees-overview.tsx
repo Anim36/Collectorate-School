@@ -9,16 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PortalTable } from "@/components/shared/portal-table";
 import { StudentMetrics } from "@/components/student/student-metrics";
-import {
-  currentDueFees,
-  currentFeeSummary,
-  currentPaymentHistory,
-  type FeeTableRow,
-  type PaymentRecord,
-} from "@/data/student";
 import { cn } from "@/lib/utils";
+import type {
+  StudentFeeRow,
+  StudentFeesData,
+  StudentPaymentRow,
+} from "@/types/student";
 
 export interface StudentFeesOverviewProps {
+  /** The fees and the payments of the signed-in student. */
+  data: StudentFeesData;
   /**
    * Whether the "Pay Now" action is shown.
    *
@@ -43,15 +43,14 @@ export interface StudentFeesOverviewProps {
  * moves up by 71px — which is exactly what Figma draws.
  */
 export function StudentFeesOverview({
+  data,
   showPayNow = true,
   onPayFee,
   className,
 }: StudentFeesOverviewProps) {
   const router = useRouter();
 
-  const summary = currentFeeSummary();
-  const fees = currentDueFees();
-  const history = currentPaymentHistory();
+  const { summary, fees, payments } = data;
 
   const metrics = [
     {
@@ -75,23 +74,28 @@ export function StudentFeesOverview({
   const dueColumns = [
     {
       header: "Fee item",
-      cell: (row: FeeTableRow) => (
+      cell: (row: StudentFeeRow) => (
         <span className="flex w-full flex-wrap items-center gap-2">
           <span>{row.item}</span>
-          {row.paid ? (
+          {row.status === "Paid" ? (
             <Badge variant="success" className="px-2 py-0 text-micro">
               Paid
+            </Badge>
+          ) : null}
+          {row.status === "Pending verification" ? (
+            <Badge variant="warning" className="px-2 py-0 text-micro">
+              Pending
             </Badge>
           ) : null}
         </span>
       ),
     },
-    { header: "Due date", cell: (row: FeeTableRow) => row.dueDate },
-    { header: "Amount", cell: (row: FeeTableRow) => row.amount },
+    { header: "Due date", cell: (row: StudentFeeRow) => row.dueDate },
+    { header: "Amount", cell: (row: StudentFeeRow) => row.amount },
   ];
 
   const dueRecords = fees.map((row) => ({
-    id: row.item,
+    id: row.id,
     lines: [
       { label: "Fee item", value: row.item },
       { label: "Due date", value: row.dueDate },
@@ -102,24 +106,27 @@ export function StudentFeesOverview({
   const historyColumns = [
     {
       header: "Receipt",
-      cell: (row: PaymentRecord) => (
-        <Link
-          href={`/student/fees/receipt/${row.receipt}`}
-          className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {row.receipt}
-        </Link>
-      ),
+      cell: (row: StudentPaymentRow) =>
+        row.receiptId ? (
+          <Link
+            href={`/student/fees/receipt/${row.receiptId}`}
+            className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {row.receipt}
+          </Link>
+        ) : (
+          <span className="text-muted">{row.status}</span>
+        ),
     },
-    { header: "Date", cell: (row: PaymentRecord) => row.date },
-    { header: "Method", cell: (row: PaymentRecord) => row.method },
-    { header: "Amount", cell: (row: PaymentRecord) => row.amount },
+    { header: "Date", cell: (row: StudentPaymentRow) => row.date },
+    { header: "Method", cell: (row: StudentPaymentRow) => row.method },
+    { header: "Amount", cell: (row: StudentPaymentRow) => row.amount },
   ];
 
-  const historyRecords = history.map((row) => ({
-    id: row.receipt,
+  const historyRecords = payments.map((row) => ({
+    id: row.id,
     lines: [
-      { label: "Receipt", value: row.receipt },
+      { label: "Receipt", value: row.receipt || row.status },
       { label: "Date", value: row.date },
       { label: "Method", value: row.method },
       { label: "Amount", value: row.amount },
@@ -127,7 +134,7 @@ export function StudentFeesOverview({
   }));
 
   // The newest receipt is the one the download action opens.
-  const latestReceipt = history[0];
+  const latestReceipt = payments.find((row) => row.receiptId);
 
   return (
     <div className={cn("contents", className)}>
@@ -144,10 +151,10 @@ export function StudentFeesOverview({
         mobileRecords={dueRecords}
         onRowClick={
           onPayFee
-            ? (row) =>
-                onPayFee(
-                  fees.find((fee) => fee.item === row.item)?.id ?? "",
-                )
+            ? (row) => {
+                if (!row.payable) return;
+                onPayFee(row.id);
+              }
             : undefined
         }
       />
@@ -156,6 +163,7 @@ export function StudentFeesOverview({
         <Button
           type="button"
           className="h-[47px] w-[189px] px-0"
+          disabled={fees.every((fee) => !fee.payable)}
           onClick={() => onPayFee?.("")}
         >
           Pay Now · {summary.totalDue}
@@ -169,7 +177,7 @@ export function StudentFeesOverview({
       <PortalTable
         caption="Payment history"
         columns={historyColumns}
-        rows={history}
+        rows={payments}
         mobileRecords={historyRecords}
       />
 
@@ -180,7 +188,7 @@ export function StudentFeesOverview({
         disabled={!latestReceipt}
         onClick={() => {
           if (!latestReceipt) return;
-          router.push(`/student/fees/receipt/${latestReceipt.receipt}`);
+          router.push(`/student/fees/receipt/${latestReceipt.receiptId}`);
         }}
       >
         <Download aria-hidden className="size-4" />

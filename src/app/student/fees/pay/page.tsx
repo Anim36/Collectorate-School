@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { StudentPaymentMethod } from "@/components/student/student-payment-method";
+import { listPayableFees } from "@/server/services/student-fees";
 
 export const metadata: Metadata = {
   title: "Payment method",
@@ -24,9 +26,28 @@ export default async function PaymentMethodPage({
 }: PaymentMethodPageProps) {
   const { fee, method } = await searchParams;
 
+  // The fees the student may pay are read for the student the session
+  // belongs to, so a fee of another student can never be settled here.
+  const fees = await listPayableFees();
+
+  // The empty id means every outstanding fee is settled at once.
+  const selected = fee ? fees.find((entry) => entry.id === fee) : undefined;
+
+  // A fee that is not payable by this student — a fee of another student, a
+  // fee that is already paid, or one that does not exist — is reported the
+  // same way, so an id cannot be probed.
+  if (fee && !selected) {
+    notFound();
+  }
+
+  const items = selected ? [selected] : fees;
+
   return (
     <Suspense fallback={null}>
-      <StudentPaymentMethod feeId={fee ?? null} methodId={method ?? null} />
+      <StudentPaymentMethod
+        methodId={method ?? null}
+        items={items}
+      />
     </Suspense>
   );
 }

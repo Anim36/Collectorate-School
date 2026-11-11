@@ -1,5 +1,7 @@
+import Link from "next/link";
+
 import { cn } from "@/lib/utils";
-import type { NoticeAttachment } from "@/data/notices";
+import type { NoticeAttachment } from "@/types/notice";
 
 export interface AttachmentTableProps {
   /** Files attached to the notice. */
@@ -62,7 +64,16 @@ export function AttachmentTable({
           {attachments.map((attachment) => (
             <tr key={attachment.name}>
               <td className="border-b-[16px] border-transparent px-3 py-3 align-top text-body-md leading-[1.45] text-ink">
-                {attachment.name}
+                {attachment.fileId ? (
+                  <Link
+                    href={`/api/files/${attachment.fileId}`}
+                    className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {attachment.name}
+                  </Link>
+                ) : (
+                  attachment.name
+                )}
               </td>
               <td className="border-b-[16px] border-transparent px-3 py-3 align-top text-body-md leading-[1.45] text-ink">
                 {attachment.format}
@@ -80,7 +91,17 @@ export function AttachmentTable({
         {attachments.map((attachment) => (
           <li key={attachment.name} className="w-full">
             <p className="text-body font-medium leading-[1.45] text-ink">
-              Document:&nbsp;&nbsp;{attachment.name}
+              Document:&nbsp;&nbsp;
+              {attachment.fileId ? (
+                <Link
+                  href={`/api/files/${attachment.fileId}`}
+                  className="transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {attachment.name}
+                </Link>
+              ) : (
+                attachment.name
+              )}
             </p>
             <p className="mt-2 text-caption leading-[1.45] text-ink">
               Format:&nbsp;&nbsp;{attachment.format}

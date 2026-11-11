@@ -7,7 +7,7 @@ import { AttachmentTable } from "@/components/notice/attachment-table";
 import { NoticeArticle } from "@/components/notice/notice-article";
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { Button } from "@/components/ui/button";
-import { formatLongNoticeDate, findStudentNotice } from "@/data/notices";
+import { getStudentNotice } from "@/server/services/student-content";
 
 interface StudentNoticeDetailPageProps {
   /** Route parameter carrying the notice identifier. */
@@ -18,7 +18,7 @@ export async function generateMetadata({
   params,
 }: StudentNoticeDetailPageProps): Promise<Metadata> {
   const { id } = await params;
-  const notice = findStudentNotice(id);
+  const notice = await getStudentNotice(id);
 
   if (!notice) {
     return { title: "Notice not found" };
@@ -38,12 +38,17 @@ export async function generateMetadata({
  * the attachment table, a download button and a link back to the board. Only
  * the surrounding chrome changes — the portal shell instead of the public
  * navbar and footer.
+ *
+ * The notice is read from the database, and only a published notice that is
+ * addressed to students or to the public is reachable. A draft notice, or one
+ * addressed to other people only, is reported the same way as one that does
+ * not exist, so an id cannot be probed.
  */
 export default async function StudentNoticeDetailPage({
   params,
 }: StudentNoticeDetailPageProps) {
   const { id } = await params;
-  const notice = findStudentNotice(id);
+  const notice = await getStudentNotice(id);
 
   if (!notice) {
     notFound();
@@ -53,7 +58,7 @@ export default async function StudentNoticeDetailPage({
     <div className="flex w-full flex-col gap-6 px-6 py-6 md:px-8 md:py-8">
       <StudentPageHeader
         title={notice.title}
-        description={`${notice.category}  •  Published ${formatLongNoticeDate(notice.publishedOn)}`}
+        description={`${notice.category}  •  Published ${notice.publishedLabel}`}
       />
 
       <NoticeArticle notice={notice} className="w-full" />

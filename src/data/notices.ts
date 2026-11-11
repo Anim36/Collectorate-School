@@ -1,3 +1,5 @@
+import type { NoticeAttachment } from "@/types/notice";
+
 /**
  * Notice board mock data.
  * Copy, order and geometry mirror the Figma "Public / Notice" and
@@ -17,15 +19,6 @@ export const noticeCategories = [
 
 /** A single notice category without the reset entry. */
 export type NoticeCategory = Exclude<(typeof noticeCategories)[number], "All categories">;
-
-export interface NoticeAttachment {
-  /** File name shown in the attachment table. */
-  name: string;
-  /** File format, e.g. "PDF". */
-  format: string;
-  /** File size, e.g. "240 KB". */
-  size: string;
-}
 
 export interface Notice {
   /** Stable identifier used in the route `/notice/[id]`. */

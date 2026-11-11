@@ -176,4 +176,11 @@
     break-inside: avoid;
     box-shadow: none !important;
   }
+
+  /* The result prints on A4 as well: the shell, the navigation and the
+     actions are hidden, so only the marks of the student reach the paper. */
+  [data-result="screen"],
+  [data-result="action"] {
+    display: none !important;
+  }
 }

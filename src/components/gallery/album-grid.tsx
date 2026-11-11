@@ -5,7 +5,7 @@ import * as React from "react";
 import { Maximize2 } from "lucide-react";
 
 import { PhotoLightbox } from "@/components/gallery/photo-lightbox";
-import type { GalleryAlbum } from "@/data/gallery";
+import type { GalleryAlbum } from "@/types/gallery";
 import { cn } from "@/lib/utils";
 
 export interface AlbumGridProps {

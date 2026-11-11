@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { studentProfile } from "@/data/student";
+import type { StudentProfile } from "@/types/student";
 
 export interface StudentDetailFieldProps {
   /** Field label, e.g. "Class / Section". */
@@ -30,21 +30,6 @@ export function StudentDetailField({
   );
 }
 
-/** The eight profile fields, in Figma's order. */
-const fields: readonly { label: string; value: string }[] = [
-  {
-    label: "Class / Section",
-    value: `${studentProfile.className} / ${studentProfile.section}`,
-  },
-  { label: "Roll number", value: studentProfile.roll },
-  { label: "Date of birth", value: studentProfile.dateOfBirth },
-  { label: "Guardian", value: studentProfile.guardian },
-  { label: "Guardian phone", value: studentProfile.guardianPhone },
-  { label: "Email", value: studentProfile.email },
-  { label: "Address", value: studentProfile.address },
-  { label: "Emergency contact", value: studentProfile.emergencyContact },
-];
-
 /**
  * The profile detail grid.
  * Figma "Profile details" (2:3940, 2:3949, 2:3958 and 2:3967 on desktop;
@@ -57,7 +42,28 @@ const fields: readonly { label: string; value: string }[] = [
  * Figma draws every row as its own frame, so the grid is not wrapped in a
  * box of its own: the rows sit directly in the page body.
  */
-export function StudentProfileDetails({ className }: { className?: string }) {
+export function StudentProfileDetails({
+  profile,
+  className,
+}: {
+  /** The profile of the signed-in student. */
+  profile: StudentProfile;
+  className?: string;
+}) {
+  const fields: readonly { label: string; value: string }[] = [
+    {
+      label: "Class / Section",
+      value: `${profile.className} / ${profile.sectionName}`,
+    },
+    { label: "Roll number", value: profile.roll },
+    { label: "Date of birth", value: profile.dateOfBirth },
+    { label: "Guardian", value: profile.guardian },
+    { label: "Guardian phone", value: profile.guardianPhone },
+    { label: "Email", value: profile.email },
+    { label: "Address", value: profile.address },
+    { label: "Emergency contact", value: profile.emergencyContact },
+  ];
+
   return (
     <div
       className={cn(

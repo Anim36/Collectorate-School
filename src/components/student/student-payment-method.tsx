@@ -12,13 +12,10 @@ import { Input } from "@/components/ui/input";
 import { ModalOption } from "@/components/ui/modal-option";
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { useSetPortalSection } from "@/components/layout/portal-section-context";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import {
-  formatTaka,
-  paymentMethods,
-  recordPayment,
-  resolveFeeItems,
-} from "@/data/student";
+import { submitStudentPaymentAction } from "@/app/student/actions";
+import type { StudentPayableFee } from "@/types/student";
 
 /**
  * A Bangladeshi mobile number: eleven digits that start with 01.
@@ -38,103 +35,43 @@ const transactionId = z
   .regex(/^[A-Za-z0-9]+$/, "The transaction ID holds letters and digits only.");
 
 /**
- * A card number: 13 to 19 digits, with the spaces a reader types in.
+ * The last four digits of a card.
+ *
+ * The school never takes the card number and never the security code: without
+ * a payment gateway there is nothing to charge the card with, so the only
+ * thing the office needs is the last four digits, which identify the card on
+ * the student's receipt.
  */
-const cardNumber = z
+const cardLast4 = z
   .string()
   .trim()
-  .transform((value) => value.replace(/\s+/g, ""))
-  .refine((value) => /^\d{13,19}$/.test(value), "Enter a valid card number.");
-
-/**
- * An expiry date, written as MM/YY.
- */
-const cardExpiry = z
-  .string()
-  .trim()
-  .regex(/^(0[1-9]|1[0-2])\/\d{2}$/, "Write the expiry as MM/YY.")
-  .refine((value) => {
-    const [month, year] = value.split("/").map(Number);
-    if (!month || year === undefined) return false;
-
-    // The card is valid through the last day of its expiry month.
-    return new Date(2000 + year, month, 1).getTime() > Date.now();
-  }, "This card has expired.");
-
-/** A three-digit security code. */
-const cardCvc = z
-  .string()
-  .trim()
-  .regex(/^\d{3}$/, "The security code has 3 digits.");
+  .regex(/^\d{4}$/, "The last four digits are four numbers.");
 
 const paymentSchema = z
   .object({
-    method: z.enum(["bkash", "nagad", "card"]),
+    method: z.enum(["BKASH", "NAGAD", "CARD"]),
     mobile: z.string().optional(),
     transactionId: z.string().optional(),
-    cardNumber: z.string().optional(),
-    cardName: z.string().optional(),
-    cardExpiry: z.string().optional(),
-    cardCvc: z.string().optional(),
+    cardLast4: z.string().optional(),
   })
   .superRefine((values, context) => {
     // Only the fields of the chosen method are checked.
-    if (values.method === "card") {
-      if (!values.cardNumber) {
+    if (values.method === "CARD") {
+      if (!values.cardLast4) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["cardNumber"],
-          message: "Enter the card number.",
+          path: ["cardLast4"],
+          message: "Enter the last four digits of the card.",
         });
       } else {
-        const parsed = cardNumber.safeParse(values.cardNumber);
+        const parsed = cardLast4.safeParse(values.cardLast4);
         if (!parsed.success) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ["cardNumber"],
-            message: parsed.error.issues[0]?.message ?? "Enter a valid card number.",
-          });
-        }
-      }
-
-      if (!values.cardName || values.cardName.trim().length < 2) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cardName"],
-          message: "Write the name printed on the card.",
-        });
-      }
-
-      if (!values.cardExpiry) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cardExpiry"],
-          message: "Enter the expiry date.",
-        });
-      } else {
-        const parsed = cardExpiry.safeParse(values.cardExpiry);
-        if (!parsed.success) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["cardExpiry"],
-            message: parsed.error.issues[0]?.message ?? "Enter a valid expiry.",
-          });
-        }
-      }
-
-      if (!values.cardCvc) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["cardCvc"],
-          message: "Enter the security code.",
-        });
-      } else {
-        const parsed = cardCvc.safeParse(values.cardCvc);
-        if (!parsed.success) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["cardCvc"],
-            message: parsed.error.issues[0]?.message ?? "Enter a valid code.",
+            path: ["cardLast4"],
+            message:
+              parsed.error.issues[0]?.message ??
+              "Enter the last four digits of the card.",
           });
         }
       }
@@ -179,14 +116,24 @@ const paymentSchema = z
 
 type PaymentValues = z.infer<typeof paymentSchema>;
 
-/** How long the mock payment takes before it resolves. */
-const PAYMENT_DURATION = 1500;
+/**
+ * The payment methods the page offers, with the label each one is shown
+ * under. The ids are the ones the database holds.
+ */
+const PAYMENT_METHODS = [
+  { id: "BKASH", label: "bKash" },
+  { id: "NAGAD", label: "Nagad" },
+  { id: "CARD", label: "Debit / Credit Card" },
+] as const;
+
+/** The method the page opens on. */
+const INITIAL_METHOD = "BKASH";
 
 export interface StudentPaymentMethodProps {
-  /** The fee the query string points at. */
-  feeId: string | null;
   /** The method the query string points at. */
   methodId: string | null;
+  /** The fee lines the payment settles. */
+  items: readonly StudentPayableFee[];
   className?: string;
 }
 
@@ -203,25 +150,28 @@ export interface StudentPaymentMethodProps {
  * (2:5861–2:5865) and keeps their rhythm — three 73px options 16px apart, the
  * note 16px below the last one, the 191×47 action and the 104×49 cancel.
  *
- * No money moves. The payment is simulated, and the mock store keeps only the
- * last four digits of a card — never the card number itself.
+ * The payment is written to the database as a request that waits for the
+ * admin to approve it, so the school sees it in the queue. Only the last
+ * four digits of a card are kept — never the card number itself, and never
+ * the security code.
+ *
+ * The amount is never sent by the browser: the server adds up the fee lines
+ * the payment settles, so a client cannot name its own price.
  */
 export function StudentPaymentMethod({
-  feeId,
   methodId,
+  items,
   className,
 }: StudentPaymentMethodProps) {
   const router = useRouter();
+  const { toast } = useToast();
 
   // The top bar names the section, as Figma draws it.
   useSetPortalSection("Payment method");
 
-  const items = resolveFeeItems(feeId);
-  const total = items.reduce((sum, item) => sum + item.value, 0);
-
-  const initialMethod = paymentMethods.some((entry) => entry.id === methodId)
+  const initialMethod = PAYMENT_METHODS.some((entry) => entry.id === methodId)
     ? (methodId as PaymentValues["method"])
-    : "bkash";
+    : INITIAL_METHOD;
 
   const [paying, setPaying] = React.useState(false);
 
@@ -237,10 +187,7 @@ export function StudentPaymentMethod({
       method: initialMethod,
       mobile: "",
       transactionId: "",
-      cardNumber: "",
-      cardName: "",
-      cardExpiry: "",
-      cardCvc: "",
+      cardLast4: "",
     },
     mode: "onChange",
   });
@@ -253,36 +200,46 @@ export function StudentPaymentMethod({
       method: next,
       mobile: "",
       transactionId: "",
-      cardNumber: "",
-      cardName: "",
-      cardExpiry: "",
-      cardCvc: "",
+      cardLast4: "",
     });
   };
 
   const onSubmit = handleSubmit(async (values) => {
     setPaying(true);
 
-    await new Promise((resolve) => setTimeout(resolve, PAYMENT_DURATION));
-
-    const label =
-      paymentMethods.find((entry) => entry.id === values.method)?.label ?? "bKash";
-
-    // Only the last four digits of a card are kept.
-    const cardLast4 =
-      values.method === "card" && values.cardNumber
-        ? values.cardNumber.replace(/\s+/g, "").slice(-4)
-        : "";
-
-    const receipt = recordPayment({
-      items,
-      method: label,
-      transactionId: values.transactionId ?? "",
-      cardLast4,
+    const result = await submitStudentPaymentAction({
+      feeIds: items.map((item) => item.id),
+      method: values.method,
+      // The number the money was sent from, so the office can look the
+      // payment up when it verifies it.
+      senderMobile:
+        values.method === "CARD" ? undefined : values.mobile,
+      transactionId:
+        values.method === "CARD" ? undefined : values.transactionId,
+      // Only the last four digits of a card ever leave the browser.
+      cardLast4: values.method === "CARD" ? values.cardLast4 : undefined,
     });
 
     setPaying(false);
-    router.push(`/student/fees/receipt/${receipt.id}`);
+
+    if (!result.ok) {
+      toast({
+        title: "Payment not submitted",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // The payment waits for the school to confirm it: without a payment
+    // gateway the server cannot know that the money really moved, so the
+    // receipt is only written when an admin approves the payment.
+    toast({
+      title: "Payment submitted",
+      description: "Payment submitted. The school will confirm it shortly.",
+    });
+
+    router.push("/student/fees");
   });
 
   return (
@@ -331,7 +288,9 @@ export function StudentPaymentMethod({
               Total
             </dt>
             <dd className="text-title font-semibold leading-[1.45] text-ink">
-              {formatTaka(total)}
+              {items
+                .reduce((sum, item) => sum + item.amountPoisha, 0)
+                .toLocaleString("en-US")}
             </dd>
           </div>
         </dl>
@@ -352,7 +311,7 @@ export function StudentPaymentMethod({
           </h3>
 
           <div className="flex w-full flex-col gap-4">
-            {paymentMethods.map((entry) => (
+            {PAYMENT_METHODS.map((entry) => (
               <ModalOption
                 key={entry.id}
                 label={entry.label}
@@ -364,7 +323,8 @@ export function StudentPaymentMethod({
         </div>
 
         <p className="mt-4 text-caption leading-[1.45] text-muted">
-          You’ll continue to your payment provider to authorise the transaction.
+          Your payment is sent to the school office. It is confirmed there, and
+          the receipt appears once the school has approved it.
         </p>
 
         <form
@@ -372,62 +332,26 @@ export function StudentPaymentMethod({
           onSubmit={onSubmit}
           className="mt-6 flex w-full flex-col items-start gap-6"
         >
-          {method === "card" ? (
+          {method === "CARD" ? (
             <div className="flex w-full flex-col items-start gap-4">
               <PaymentField
-                label="Card number"
-                error={errors.cardNumber?.message}
+                label="Last four digits of the card"
+                error={errors.cardLast4?.message}
               >
                 <Input
-                  {...register("cardNumber")}
+                  {...register("cardLast4")}
                   inputMode="numeric"
-                  autoComplete="cc-number"
-                  placeholder="4242 4242 4242 4242"
-                  aria-invalid={errors.cardNumber ? true : undefined}
+                  autoComplete="off"
+                  placeholder="4242"
+                  aria-invalid={errors.cardLast4 ? true : undefined}
                 />
               </PaymentField>
 
-              <PaymentField
-                label="Name on card"
-                error={errors.cardName?.message}
-              >
-                <Input
-                  {...register("cardName")}
-                  autoComplete="cc-name"
-                  placeholder="Arif Hasan"
-                  aria-invalid={errors.cardName ? true : undefined}
-                />
-              </PaymentField>
-
-              <div className="flex w-full flex-col items-start gap-4 sm:flex-row">
-                <PaymentField
-                  label="Expiry"
-                  error={errors.cardExpiry?.message}
-                  className="w-full sm:w-1/2"
-                >
-                  <Input
-                    {...register("cardExpiry")}
-                    inputMode="numeric"
-                    autoComplete="cc-exp"
-                    placeholder="MM/YY"
-                    aria-invalid={errors.cardExpiry ? true : undefined}
-                  />
-                </PaymentField>
-
-                <PaymentField
-                  label="CVC"
-                  error={errors.cardCvc?.message}
-                  className="w-full sm:w-1/2"
-                >
-                  <Input
-                    {...register("cardCvc")}
-                    inputMode="numeric"
-                    autoComplete="cc-csc"
-                    placeholder="123"
-                    aria-invalid={errors.cardCvc ? true : undefined}
-                  />
-                </PaymentField>
-              </div>
+              <p className="text-caption leading-[1.45] text-muted">
+                The school only needs the last four digits, so it can find the
+                card on your receipt. Your card number is never asked for and
+                never kept.
+              </p>
             </div>
           ) : (
             <div className="flex w-full flex-col items-start gap-4">
@@ -465,7 +389,7 @@ export function StudentPaymentMethod({
               data-payment="pay"
               className="h-[47px] w-[191px] shrink-0 px-0"
             >
-              {paying ? "Processing…" : "Pay"}
+              {paying ? "Submitting…" : "Pay"}
             </Button>
 
             <Button
@@ -480,7 +404,8 @@ export function StudentPaymentMethod({
           </div>
 
           <p className="text-caption leading-[1.45] text-muted">
-            This is a demo. No money is charged and no card number is stored.
+            Your payment is sent to the school office for verification. Only the
+            last four digits of a card are kept.
           </p>
         </form>
       </section>

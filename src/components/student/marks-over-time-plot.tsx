@@ -9,7 +9,7 @@ import {
   YAxis,
 } from "recharts";
 
-import type { PerformancePoint } from "@/data/student";
+import type { StudentPerformancePoint } from "@/types/student";
 
 /**
  * The four horizontal rules Figma draws inside the plot.
@@ -20,7 +20,7 @@ const GRIDLINES = [20, 65, 110, 155];
 
 export interface MarksOverTimePlotProps {
   /** One mark per month, in order. */
-  points: readonly PerformancePoint[];
+  points: readonly StudentPerformancePoint[];
 }
 
 /**

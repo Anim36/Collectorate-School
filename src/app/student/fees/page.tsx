@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { StudentFees } from "@/components/student/student-fees";
+import { getStudentFees } from "@/server/services/student-fees";
 
 export const metadata: Metadata = {
   title: "Fee Payment",
@@ -13,6 +14,14 @@ export const metadata: Metadata = {
  * and the matching dark frames): the metric row, the due-fees table, the
  * payment method modal, the payment history table and the receipt button.
  */
-export default function StudentFeesPage() {
-  return <StudentFees />;
+export default async function StudentFeesPage() {
+  // The fee lines and the payments come from the database, and they are the
+  // lines and the payments of the signed-in student alone.
+  const fees = await getStudentFees();
+
+  if (!fees) {
+    return null;
+  }
+
+  return <StudentFees data={fees} />;
 }

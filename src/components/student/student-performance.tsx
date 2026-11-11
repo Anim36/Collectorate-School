@@ -3,12 +3,13 @@ import { StudentMetrics } from "@/components/student/student-metrics";
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { SubjectMarkBars } from "@/components/student/subject-mark-bars";
 import { cn } from "@/lib/utils";
-import {
-  performanceGrowth,
-  performanceStrength,
-  performanceTrend,
-  subjectMarks,
-} from "@/data/student";
+import type { StudentPerformanceData } from "@/types/student";
+
+export interface StudentPerformanceProps {
+  /** The performance of the signed-in student, read from the database. */
+  data: StudentPerformanceData;
+  className?: string;
+}
 
 /**
  * Student performance page body.
@@ -22,14 +23,10 @@ import {
  * - Mobile (375): 24px padding, an 88px greeting, the metric row in two
  *   blocks of two and 141px note cards whose copy wraps to two lines.
  */
-export function StudentPerformance({ className }: { className?: string }) {
-  const metrics = [
-    { label: "Average", value: "84%", hint: "Across all subjects" },
-    { label: "Best subject", value: "Math", hint: "91 / 100" },
-    { label: "Growth", value: "+8%", hint: "Since first term" },
-    { label: "Last GPA", value: "4.75", hint: "Out of 5.00" },
-  ];
-
+export function StudentPerformance({
+  data,
+  className,
+}: StudentPerformanceProps) {
   return (
     <div
       className={cn(
@@ -42,19 +39,25 @@ export function StudentPerformance({ className }: { className?: string }) {
         description="Your school life, clearly organised."
       />
 
-      <StudentMetrics metrics={metrics} />
+      <StudentMetrics metrics={data.metrics} />
 
-      <MarksOverTimeChart points={performanceTrend} />
+      <MarksOverTimeChart points={data.trend} />
 
       <h3 className="text-title font-bold leading-[1.45] text-ink">
         Subject-wise performance
       </h3>
 
-      <SubjectMarkBars marks={subjectMarks} />
+      <SubjectMarkBars marks={data.marks} />
 
-      <PerformanceNote title={performanceStrength.title} body={performanceStrength.body} />
+      <PerformanceNote
+        title={data.notes.strength.title}
+        body={data.notes.strength.body}
+      />
 
-      <PerformanceNote title={performanceGrowth.title} body={performanceGrowth.body} />
+      <PerformanceNote
+        title={data.notes.growth.title}
+        body={data.notes.growth.body}
+      />
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import type { GalleryAlbum, GalleryPhoto } from "@/types/gallery";
+
 /**
  * Gallery mock data.
  * Copy, order and geometry mirror the Figma "Public / Gallery" and
@@ -14,39 +16,7 @@ export type GalleryTab = Exclude<(typeof galleryTabs)[number], "All albums">;
 /** Every gallery tab, including the reset entry. */
 export type GalleryTabValue = (typeof galleryTabs)[number];
 
-export interface GalleryPhoto {
-  /** Photograph path inside /public/images. */
-  src: string;
-  /** Alternative text for the photograph. */
-  alt: string;
-  /** Intrinsic width of the photograph. */
-  width: number;
-  /** Intrinsic height of the photograph. */
-  height: number;
-}
-
-export interface GalleryAlbum {
-  /** Stable identifier used in the route `/gallery/[albumId]`. */
-  id: string;
-  /** Album title. */
-  title: string;
-  /** Publication date, e.g. "12 November 2026". */
-  date: string;
-  /** Number of photographs in the album. */
-  photoCount: number;
-  /** Tab the album is filed under. */
-  category: GalleryTab;
-  /** Short summary shown under the album title. */
-  description: string;
-  /**
-   * Meta line shown under the album title.
-   * The public grid builds it from the photo count and the date; the student
-   * portal shows Figma's own "School memories · 24 photos" line instead.
-   */
-  meta?: string;
-  /** Photographs shown in the album grid and the lightbox. */
-  photos: readonly GalleryPhoto[];
-}
+export type { GalleryAlbum, GalleryPhoto };
 
 /**
  * The album grid.
@@ -180,36 +150,3 @@ export function findGalleryAlbum(albumId: string): GalleryAlbum | undefined {
   return galleryAlbums.find((album) => album.id === albumId);
 }
 
-/**
- * The albums shown in the student portal gallery.
- *
- * Figma "Student / Gallery" (light 2:5610 / 2:5671 / 2:5714 and the matching
- * dark frames) lists three albums in a single column — "Science fair 2026",
- * "Annual sports day" and "Our campus" — with the meta line
- * "School memories · 24 photos". The first two albums are the public ones;
- * the campus album carries the portal title Figma uses.
- */
-export const studentGalleryAlbums: readonly GalleryAlbum[] = [
-  {
-    ...galleryAlbums[0],
-    title: "Science fair 2026",
-    meta: "School memories · 24 photos",
-  },
-  {
-    ...galleryAlbums[1],
-    title: "Annual sports day",
-    meta: "School memories · 24 photos",
-  },
-  {
-    ...galleryAlbums[2],
-    id: "our-campus",
-    title: "Our campus",
-    meta: "School memories · 24 photos",
-  },
-];
-/** Finds a portal album by its route identifier. */
-export function findStudentGalleryAlbum(
-  albumId: string,
-): GalleryAlbum | undefined {
-  return studentGalleryAlbums.find((album) => album.id === albumId);
-}

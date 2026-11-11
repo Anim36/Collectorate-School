@@ -1,9 +1,11 @@
 import Image from "next/image";
 
 import { cn } from "@/lib/utils";
-import { studentProfile } from "@/data/student";
+import type { StudentProfile } from "@/types/student";
 
 export interface StudentIdentityProps {
+  /** The profile of the signed-in student. */
+  profile: StudentProfile;
   className?: string;
 }
 
@@ -15,7 +17,7 @@ export interface StudentIdentityProps {
  * The photograph is a 120px rounded square, then the name 16px below it, then
  * the meta line 16px below the name.
  */
-export function StudentIdentity({ className }: StudentIdentityProps) {
+export function StudentIdentity({ profile, className }: StudentIdentityProps) {
   return (
     <section
       className={cn(
@@ -28,7 +30,7 @@ export function StudentIdentity({ className }: StudentIdentityProps) {
         className="relative size-[120px] shrink-0 overflow-hidden rounded-[12px] bg-tint"
       >
         <Image
-          src={studentProfile.photo}
+          src={profile.photo}
           alt=""
           fill
           sizes="120px"
@@ -37,12 +39,12 @@ export function StudentIdentity({ className }: StudentIdentityProps) {
       </div>
 
       <h3 className="mt-4 text-title font-bold leading-[1.45] text-ink">
-        {studentProfile.name}
+        {profile.name}
       </h3>
       <p className="mt-4 text-caption leading-[1.45] text-muted">
-        {studentProfile.studentId}
+        {profile.studentId}
         {"  •  "}
-        {studentProfile.status}
+        {profile.status}
       </p>
     </section>
   );

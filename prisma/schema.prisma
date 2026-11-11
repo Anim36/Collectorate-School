@@ -310,6 +310,9 @@ model Student {
   address          String?
   photoUrl         String?   @map("photo_url")
   dateOfBirth      DateTime? @map("date_of_birth")
+  /// When the student last opened the portal. The dashboard counts the
+  /// notices that were published since this moment.
+  lastVisitedAt    DateTime? @map("last_visited_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -602,6 +605,8 @@ model Payment {
   method        PaymentMethod
   /// The identifier the sender quoted. Unique, so a payment is never recorded twice.
   transactionId String?       @unique @map("transaction_id")
+  /// The number the money was sent from, for a mobile wallet payment.
+  senderMobile  String?       @map("sender_mobile")
   /// The last four digits of a card. Never the full number.
   cardLast4     String?       @map("card_last4")
   status        PaymentStatus @default(COMPLETED)

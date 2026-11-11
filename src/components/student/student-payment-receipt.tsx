@@ -9,32 +9,14 @@ import { StudentFeesOverview } from "@/components/student/student-fees-overview"
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { useSetPortalSection } from "@/components/layout/portal-section-context";
 import { cn } from "@/lib/utils";
-import { formatTaka, receiptStudent } from "@/data/student";
+import { formatPoisha } from "@/lib/money";
+import type { StudentFeesData, StudentReceiptData } from "@/types/student";
 
 export interface StudentPaymentReceiptProps {
-  /** The receipt number, as it appears in the route. */
-  receiptId: string;
-  /** The receipt number, as it appears on the receipt. */
-  receiptNumber: string;
-  /** Date the payment was made. */
-  paidOn: string;
-  /** How the payment was made. */
-  method: string;
-  /** Identifier of the sender's transaction. */
-  transactionId: string;
-  /** Last four digits of the card, when a card paid. */
-  cardLast4: string;
-  /** The items the receipt settles. */
-  items: readonly {
-    /** What the fee is for. */
-    item: string;
-    /** Date the fee fell due. */
-    dueDate: string;
-    /** Amount paid, e.g. "৳ 1,500". */
-    amount: string;
-  }[];
-  /** Total paid, in taka. */
-  total: number;
+  /** The receipt of the student's own payment. */
+  receipt: StudentReceiptData;
+  /** The fees and the payments of the signed-in student. */
+  fees: StudentFeesData | null;
   className?: string;
 }
 
@@ -61,20 +43,12 @@ export interface StudentPaymentReceiptProps {
  * navigation and the actions, so only the receipt itself reaches the paper.
  */
 export function StudentPaymentReceipt({
-  receiptId,
-  receiptNumber,
-  paidOn,
-  method,
-  transactionId,
-  cardLast4,
-  items,
-  total,
+  receipt,
+  fees,
   className,
 }: StudentPaymentReceiptProps) {
   // The top bar names the section, as Figma draws it.
   useSetPortalSection("Payment receipt");
-
-  const student = receiptStudent();
 
   // The download uses the print flow, so the file is the printed receipt.
   const print = () => window.print();
@@ -95,9 +69,11 @@ export function StudentPaymentReceipt({
 
       {/* The fee blocks, without the "Pay Now" action. They are part of the
           screen, not of the paper, so the print run leaves them out. */}
-      <div className="contents" data-receipt="screen">
-        <StudentFeesOverview showPayNow={false} />
-      </div>
+      {fees ? (
+        <div className="contents" data-receipt="screen">
+          <StudentFeesOverview data={fees} showPayNow={false} />
+        </div>
+      ) : null}
 
       {/* The receipt card, on Figma's 376px frame. */}
       <section
@@ -110,19 +86,19 @@ export function StudentPaymentReceipt({
         </h3>
 
         <p className="text-display font-semibold leading-[1.45] text-ink">
-          {formatTaka(total)}
+          {formatPoisha(receipt.total * 100)}
         </p>
 
         {/* The receipt details, on Figma's 138px band of three lines. */}
         <div className="flex h-[138px] w-full flex-col">
           <p className="text-[16px] font-semibold leading-[46px] text-ink md:text-[20px]">
-            Receipt {receiptNumber}
+            Receipt {receipt.receiptNumber}
           </p>
           <p className="text-[16px] font-semibold leading-[46px] text-ink md:text-[20px]">
-            {student.name} · {student.studentId}
+            {receipt.student.name} · {receipt.student.studentId}
           </p>
           <p className="text-[16px] font-semibold leading-[46px] text-ink md:text-[20px]">
-            {paidOn}
+            {receipt.paidOn}
           </p>
         </div>
 
@@ -175,7 +151,7 @@ export function StudentPaymentReceipt({
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {receipt.items.map((item) => (
               <tr key={item.item}>
                 <td className="py-3 pl-3 pr-0 align-top text-body-md leading-[1.45] text-ink">
                   {item.item}
@@ -198,23 +174,23 @@ export function StudentPaymentReceipt({
                 Total
               </td>
               <td className="border-t border-border py-3 pl-3 pr-0 text-body font-semibold leading-[1.45] text-ink">
-                {formatTaka(total)}
+                {formatPoisha(receipt.total * 100)}
               </td>
             </tr>
           </tfoot>
         </table>
 
         <dl className="flex w-full flex-col gap-3">
-          <ReceiptRow label="Receipt number" value={receiptNumber} />
-          <ReceiptRow label="Payment date" value={paidOn} />
-          <ReceiptRow label="Student" value={student.name} />
-          <ReceiptRow label="Student ID" value={student.studentId} />
-          <ReceiptRow label="Class" value={student.className} />
-          <ReceiptRow label="Payment method" value={method} />
-          {cardLast4 ? (
-            <ReceiptRow label="Card" value={`•••• ${cardLast4}`} />
+          <ReceiptRow label="Receipt number" value={receipt.receiptNumber} />
+          <ReceiptRow label="Payment date" value={receipt.paidOn} />
+          <ReceiptRow label="Student" value={receipt.student.name} />
+          <ReceiptRow label="Student ID" value={receipt.student.studentId} />
+          <ReceiptRow label="Class" value={receipt.student.className} />
+          <ReceiptRow label="Payment method" value={receipt.method} />
+          {receipt.cardLast4 ? (
+            <ReceiptRow label="Card" value={`•••• ${receipt.cardLast4}`} />
           ) : null}
-          <ReceiptRow label="Transaction ID" value={transactionId} />
+          <ReceiptRow label="Transaction ID" value={receipt.transactionId} />
           <ReceiptRow label="Status" value="Paid" />
         </dl>
       </section>
@@ -229,7 +205,7 @@ export function StudentPaymentReceipt({
 
       {/* The receipt identifier, kept for the print run. */}
       <span className="sr-only" data-receipt="id">
-        {receiptId}
+        {receipt.id}
       </span>
     </div>
   );

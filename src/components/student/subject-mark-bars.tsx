@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
-import type { SubjectMark } from "@/data/student";
+import type { StudentSubjectMark } from "@/types/student";
 
 export interface SubjectMarkBarsProps {
   /** One bar per subject, in order. */
-  marks: readonly SubjectMark[];
+  marks: readonly StudentSubjectMark[];
   className?: string;
 }
 

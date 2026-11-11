@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 
 import {
@@ -13,21 +14,17 @@ import {
 import { AttendanceCalendar } from "@/components/student/attendance-calendar";
 import { StudentPageHeader } from "@/components/student/student-page-header";
 import { StudentMetrics } from "@/components/student/student-metrics";
-import {
-  attendanceInitialMonth,
-  attendanceMonths,
-  findAttendanceMonth,
-  formatAttendanceMonth,
-  summariseAttendance,
-  type AttendanceStatus,
-} from "@/data/student";
+import type {
+  StudentAttendanceMonth,
+  StudentAttendanceMonthOption,
+  StudentAttendanceStatus,
+} from "@/types/student";
 
-/** Builds the month options the selector offers. */
-function monthOptions() {
-  return attendanceMonths.map((month) => ({
-    value: `${month.year}-${month.month}`,
-    label: formatAttendanceMonth(month.year, month.month),
-  }));
+export interface StudentAttendanceProps {
+  /** The months the student has attendance for, newest first. */
+  months: readonly StudentAttendanceMonthOption[];
+  /** The month the page opens on. */
+  initial: StudentAttendanceMonth | null;
 }
 
 /**
@@ -41,34 +38,35 @@ function monthOptions() {
  *   sizes.
  * - Mobile (375): 24px padding, an 88px greeting, the metric row in two
  *   blocks of two and a 405px calendar with 52px week rows.
+ *
+ * The month is chosen with a link, so the month the calendar shows is read
+ * from the database again rather than kept in the browser.
  */
-export function StudentAttendance() {
-  const [selected, setSelected] = React.useState(
-    `${attendanceInitialMonth.year}-${attendanceInitialMonth.month}`,
-  );
+export function StudentAttendance({ months, initial }: StudentAttendanceProps) {
+  const router = useRouter();
 
-  const [year, month] = selected.split("-").map(Number);
-  const record = findAttendanceMonth(year, month);
+  const selected =
+    initial === null
+      ? ""
+      : `${initial.year}-${initial.month}`;
 
   const statuses = React.useMemo(() => {
-    const map = new Map<number, AttendanceStatus>();
-    record?.days.forEach((day) => map.set(day.day, day.status));
+    const map = new Map<number, StudentAttendanceStatus>();
+    initial?.days.forEach((day) => map.set(day.day, day.status));
     return map;
-  }, [record]);
+  }, [initial]);
 
   const summary = React.useMemo(
     () =>
-      record
-        ? summariseAttendance(record)
-        : {
-            present: 0,
-            absent: 0,
-            late: 0,
-            attended: 0,
-            schoolDays: 0,
-            rate: "0.0%",
-          },
-    [record],
+      initial?.summary ?? {
+        present: 0,
+        absent: 0,
+        late: 0,
+        attended: 0,
+        schoolDays: 0,
+        rate: "0.0%",
+      },
+    [initial],
   );
 
   const metrics = [
@@ -98,19 +96,27 @@ export function StudentAttendance() {
           Month
         </label>
 
-        <Select value={selected} onValueChange={setSelected}>
+        <Select
+          value={selected}
+          onValueChange={(value) =>
+            router.push(`/student/attendance?month=${value}`)
+          }
+        >
           <SelectTrigger
             id="attendance-month"
             aria-label="Month"
             className="mt-2 h-[49px] w-full max-w-[320px] items-center justify-between gap-2 rounded-[12px] border border-border bg-surface px-[25px] text-body leading-[1.45] text-ink shadow-none focus:outline-none focus:ring-2 focus:ring-ring [&>span]:line-clamp-1 [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-muted [&>svg]:opacity-100"
           >
-            <SelectValue placeholder={formatAttendanceMonth(year, month)} />
+            <SelectValue placeholder="Choose a month" />
             <ChevronDown aria-hidden className="size-4 shrink-0 text-muted" />
           </SelectTrigger>
           <SelectContent>
-            {monthOptions().map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
+            {months.map((month) => (
+              <SelectItem
+                key={`${month.year}-${month.month}`}
+                value={`${month.year}-${month.month}`}
+              >
+                {month.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -120,7 +126,17 @@ export function StudentAttendance() {
       {/* Summary counts. */}
       <StudentMetrics metrics={metrics} />
 
-      <AttendanceCalendar year={year} month={month} statuses={statuses} />
+      {initial ? (
+        <AttendanceCalendar
+          year={initial.year}
+          month={initial.month}
+          statuses={statuses}
+        />
+      ) : (
+        <p className="text-body leading-[1.45] text-muted">
+          No attendance has been recorded for you yet.
+        </p>
+      )}
 
       {/* Legend. */}
       <p className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-caption leading-[1.45] text-muted">

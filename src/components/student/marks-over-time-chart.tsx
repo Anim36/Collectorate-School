@@ -3,11 +3,11 @@
 import dynamic from "next/dynamic";
 
 import { cn } from "@/lib/utils";
-import type { PerformancePoint } from "@/data/student";
+import type { StudentPerformancePoint } from "@/types/student";
 
 export interface MarksOverTimeChartProps {
   /** One mark per month, in order. */
-  points: readonly PerformancePoint[];
+  points: readonly StudentPerformancePoint[];
   className?: string;
 }
 
