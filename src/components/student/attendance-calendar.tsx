@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { isWeeklyHoliday } from "@/config/school";
 import { cn } from "@/lib/utils";
 import type { StudentAttendanceStatus } from "@/types/student";
 
@@ -23,6 +24,7 @@ function buildMonthGrid(
   year: number,
   month: number,
   statuses: ReadonlyMap<number, StudentAttendanceStatus>,
+  holidayDays: ReadonlySet<number>,
 ): CalendarCell[] {
   const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -36,10 +38,11 @@ function buildMonthGrid(
     const recorded = statuses.get(day);
 
     // A day the school does not teach on is a weekly holiday, so it shows a
-    // dash rather than a letter. The weekend days of the month are the ones
-    // the school never marks.
+    // dash rather than a letter. The weekly holidays are the days of the week
+    // the school never marks, and a holiday of the school calendar is a day
+    // the school was closed.
     const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-    const weeklyHoliday = weekday === 5 || weekday === 6;
+    const weeklyHoliday = isWeeklyHoliday(weekday) || holidayDays.has(day);
 
     cells.push({
       day,
@@ -96,6 +99,8 @@ export interface AttendanceCalendarProps {
   month: number;
   /** Attendance status of each day of the month. */
   statuses: ReadonlyMap<number, StudentAttendanceStatus>;
+  /** The days of the month the school was closed. */
+  holidayDays?: readonly number[];
   className?: string;
 }
 
@@ -114,11 +119,14 @@ export function AttendanceCalendar({
   year,
   month,
   statuses,
+  holidayDays = [],
   className,
 }: AttendanceCalendarProps) {
+  const holidays = React.useMemo(() => new Set(holidayDays), [holidayDays]);
+
   const cells = React.useMemo(
-    () => buildMonthGrid(year, month, statuses),
-    [year, month, statuses],
+    () => buildMonthGrid(year, month, statuses, holidays),
+    [year, month, statuses, holidays],
   );
 
   return (

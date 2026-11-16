@@ -56,7 +56,6 @@ export async function getStudentProfile(): Promise<StudentProfile | null> {
     studentId: row.studentId,
     status: row.user.isActive ? "Active student" : "Inactive student",
     className: student.className,
-    sectionName: student.sectionName,
     roll: String(student.roll),
     dateOfBirth: formatDateOfBirth(row.dateOfBirth),
     guardian: row.guardianName ?? "—",

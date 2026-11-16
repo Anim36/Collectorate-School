@@ -7,8 +7,16 @@
 import type { PrismaClient } from "../../src/generated/prisma/client";
 import { adminNav, studentNav, teacherNav } from "@/data/portal-navigation";
 import { SEED_CLASSES } from "./classes";
-import { SEED_DEMO_DATA } from "./demo";
+import {
+  DEMO_STUDENT_PAYMENTS,
+  SEED_DEMO_DATA,
+} from "./demo";
 import { isoDate, isoDateTime, isoDateTimeSeconds, poisha, slug, upsertInChunks } from "./helpers";
+
+/**
+ * The name of the demo student, the one the student portal is measured with.
+ */
+const DEMO_STUDENT_NAME = "Arif Hasan";
 
 /* --------------------------------------------------------------- subjects --- */
 
@@ -567,6 +575,17 @@ export async function seedFees(
       },
     ];
 
+    // The demo student holds one more line, so the portal shows a payment
+    // that was made and a payment that waits for the school on two different
+    // lines.
+    if (student.name === DEMO_STUDENT_NAME) {
+      items.push({
+        label: "Admission fee",
+        period: "2026-11:admission",
+        amount: structure.admissionFeePoisha,
+      });
+    }
+
     for (const item of items) {
       // The invoice number is worked out from the line itself, so the same
       // line always carries the same invoice and running the seed twice
@@ -634,6 +653,11 @@ export async function seedFees(
   const mapped: { payment: (typeof SEED_DEMO_DATA.adminPayments)[number]; studentId: string }[] = [];
 
   for (const payment of SEED_DEMO_DATA.adminPayments) {
+    // The demo student has payments of its own below, so the admin table does
+    // not write one for them: two waiting payments for the same line cannot
+    // exist, and the seed would run into its own rule.
+    if (payment.student === DEMO_STUDENT_NAME) continue;
+
     const student = SEED_DEMO_DATA.students.find(
       (candidate) =>
         candidate.name === payment.student && !takenBy.has(candidate.id),
@@ -779,7 +803,143 @@ export async function seedFees(
     }
   }
 
+  // The payments of the demo student.
+  //
+  // The demo student holds three fee lines: the tuition, the activities fee
+  // and the admission fee. One payment settles the tuition and the activities
+  // fee and carries its receipt; the other one waits for the school and holds
+  // the admission fee. The two payments never share a line, so the rule that a
+  // line sits in one waiting payment only is kept.
+  const demoStudentId = studentIds.get(
+    SEED_DEMO_DATA.students.find(
+      (student) => student.name === DEMO_STUDENT_NAME,
+    )?.id ?? "",
+  );
+
+  if (demoStudentId) {
+    const demoFees = await prisma.fee.findMany({
+      where: { studentId: demoStudentId, period: { startsWith: SEED_PERIOD } },
+      orderBy: { label: "asc" },
+      select: { id: true, label: true, period: true, amountPoisha: true },
+    });
+
+    // The lines the payment that was made settles, and the line the waiting
+    // payment holds. They are picked by their slot, so the seed writes the
+    // same split every time it is run.
+    const settledFees = demoFees.filter(
+      (fee) => fee.period === "2026-11:tuition" || fee.period === "2026-11:activities",
+    );
+    const waitingFees = demoFees.filter((fee) => fee.period === "2026-11:admission");
+
+    await writeDemoStudentPayment({
+      prisma,
+      studentId: demoStudentId,
+      adminId,
+      payment: DEMO_STUDENT_PAYMENTS[0],
+      fees: settledFees,
+    });
+
+    await writeDemoStudentPayment({
+      prisma,
+      studentId: demoStudentId,
+      adminId,
+      payment: DEMO_STUDENT_PAYMENTS[1],
+      fees: waitingFees,
+    });
+  }
+
   console.log("Seed: fee structure, fees and payments written.");
+}
+
+/**
+ * Writes one payment of the demo student and the lines it settles.
+ *
+ * The payment is written from scratch every time, so the rows an earlier run
+ * left behind are taken off first. A payment that was made carries its
+ * receipt; a payment that waits for the school carries the number the money
+ * was sent from and no receipt.
+ */
+async function writeDemoStudentPayment({
+  prisma,
+  studentId,
+  adminId,
+  payment,
+  fees,
+}: {
+  prisma: PrismaClient;
+  studentId: string;
+  adminId: string;
+  payment: (typeof DEMO_STUDENT_PAYMENTS)[number];
+  fees: readonly {
+    id: string;
+    label: string;
+    period: string;
+    amountPoisha: number;
+  }[];
+}): Promise<void> {
+  if (fees.length === 0) return;
+
+  const paymentId = `payment-${payment.receiptNo}`;
+  const paidAt = isoDateTime(`${payment.paidOn}T10:00`);
+  const total = fees.reduce((sum, fee) => sum + fee.amountPoisha, 0);
+
+  // The rows of an earlier run are taken off first, so the payment and the
+  // lines it holds are written exactly as the seed describes them.
+  await prisma.paymentItem.deleteMany({ where: { paymentId } });
+  await prisma.receipt.deleteMany({ where: { paymentId } });
+  await prisma.payment.deleteMany({ where: { id: paymentId } });
+
+  await prisma.fee.updateMany({
+    where: { id: { in: fees.map((fee) => fee.id) } },
+    data: { status: "DUE", paidAt: null },
+  });
+
+  await prisma.payment.create({
+    data: {
+      id: paymentId,
+      studentId,
+      amountPoisha: total,
+      method: methodFor(payment.method),
+      transactionId: payment.transactionId,
+      // The number the money was sent from. The office matches the payment
+      // with the statement of the wallet, so it is kept with the payment.
+      senderMobile: payment.senderMobile,
+      status: payment.settled ? "COMPLETED" : "PENDING",
+      paidAt: payment.settled ? paidAt : null,
+      recordedById: adminId,
+    },
+  });
+
+  for (const fee of fees) {
+    await prisma.paymentItem.create({
+      data: {
+        id: `payment-item-${paymentId}-${fee.id}`,
+        paymentId,
+        feeId: fee.id,
+        amountPoisha: fee.amountPoisha,
+      },
+    });
+  }
+
+  // Only a payment that was made carries a receipt. A payment that still
+  // waits for the school has not been settled, so it has no receipt yet.
+  if (payment.settled) {
+    await prisma.receipt.create({
+      data: {
+        id: `receipt-${payment.receiptNo}`,
+        receiptNo: payment.receiptNo,
+        paymentId,
+        studentId,
+        amountPoisha: total,
+        issuedAt: paidAt,
+      },
+    });
+
+    await prisma.fee.updateMany({
+      where: { id: { in: fees.map((fee) => fee.id) } },
+      data: { status: "PAID", paidAt },
+    });
+  }
 }
 
 /**
@@ -833,6 +993,41 @@ export async function seedNotices(
   prisma: PrismaClient,
   adminId: string,
 ): Promise<void> {
+  // The notice of the week.
+  //
+  // The dashboard counts the notices that were published in the last seven
+  // days, so the seed writes one that is always inside that window. It is
+  // dated relative to the day the seed runs, so the count is never zero.
+  const recentNoticeId = "notice-weekly-update";
+  const recentPublishedOn = new Date();
+  recentPublishedOn.setUTCHours(0, 0, 0, 0);
+  recentPublishedOn.setUTCDate(recentPublishedOn.getUTCDate() - 2);
+
+  await prisma.notice.upsert({
+    where: { id: recentNoticeId },
+    update: {
+      title: "This week at the school",
+      body: "The weekly update of the school: the classes that are on, the events of the week and the dates the office is closed.",
+      category: "Academic",
+      status: "PUBLISHED",
+      publishedOn: recentPublishedOn,
+    },
+    create: {
+      id: recentNoticeId,
+      title: "This week at the school",
+      body: "The weekly update of the school: the classes that are on, the events of the week and the dates the office is closed.",
+      category: "Academic",
+      eyebrow: "WEEKLY UPDATE",
+      greeting: "Dear students,",
+      signature: "The Office\nNarail Collectorate School",
+      audience: "PUBLIC",
+      audiences: ["PUBLIC", "STUDENTS"],
+      status: "PUBLISHED",
+      publishedOn: recentPublishedOn,
+      authorId: adminId,
+    },
+  });
+
   // The public notice board.
   for (const notice of SEED_DEMO_DATA.notices) {
     const id = `notice-${notice.id}`;

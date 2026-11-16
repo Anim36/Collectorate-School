@@ -148,16 +148,10 @@ export async function getStudentDashboard(): Promise<StudentDashboardData | null
     listStudentNotices(),
   ]);
 
-  // The notices that arrived since the student's last visit are counted
-  // separately, because the recent list is capped while the count is not.
-  const newNotices = await countStudentNoticesSince(student.lastVisitedAt);
-
-  // The visit is recorded after the count has been made, so the notices that
-  // were just counted are the ones that are still new on the next visit.
-  await prisma.student.update({
-    where: { id: student.id },
-    data: { lastVisitedAt: new Date() },
-  });
+  // The notices of the last seven days are counted separately, because the
+  // recent list is capped while the count is not. The count is read-only: the
+  // dashboard never writes anything.
+  const newNotices = await countStudentNoticesSince();
 
   const now = new Date();
 
@@ -183,7 +177,7 @@ export async function getStudentDashboard(): Promise<StudentDashboardData | null
       {
         label: "New notices",
         value: String(newNotices),
-        hint: "Since your last visit",
+        hint: "In the last 7 days",
       },
     ],
     attendanceTrend: trend,

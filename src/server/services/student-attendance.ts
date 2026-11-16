@@ -131,7 +131,7 @@ export async function getAttendanceMonth(
   const from = startOfMonth(year, month);
   const to = startOfNextMonth(year, month);
 
-  const [rows, grouped] = await Promise.all([
+  const [rows, grouped, holidays] = await Promise.all([
     prisma.attendance.findMany({
       where: { studentId: student.id, date: { gte: from, lt: to } },
       orderBy: { date: "asc" },
@@ -142,6 +142,12 @@ export async function getAttendanceMonth(
       where: { studentId: student.id, date: { gte: from, lt: to } },
       _count: { _all: true },
     }),
+    // The holidays of the school calendar, so a day the school closed shows a
+    // dash even when no attendance was marked for it.
+    prisma.calendarEvent.findMany({
+      where: { type: "HOLIDAY", date: { gte: from, lt: to } },
+      select: { date: true },
+    }),
   ]);
 
   return {
@@ -151,6 +157,7 @@ export async function getAttendanceMonth(
       day: row.date.getUTCDate(),
       status: statusOf(row.status),
     })),
+    holidayDays: holidays.map((holiday) => holiday.date.getUTCDate()),
     summary: summarise(
       grouped.map((entry) => ({
         status: entry.status,

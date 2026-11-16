@@ -1,7 +1,11 @@
 import { prisma } from "@/server/db";
+import { Prisma } from "@/generated/prisma/client";
 import { formatPoisha } from "@/lib/money";
 import { writeAudit } from "@/server/services/audit";
-import { currentStudent } from "@/server/services/student-identity";
+import {
+  currentStudent,
+  requireStudent,
+} from "@/server/services/student-identity";
 import {
   studentPaymentSchema,
   type StudentPaymentInput,
@@ -221,6 +225,7 @@ export async function getStudentReceipt(
           method: true,
           transactionId: true,
           cardLast4: true,
+          senderMobile: true,
           items: {
             select: {
               amountPoisha: true,
@@ -248,12 +253,16 @@ export async function getStudentReceipt(
     method: methodLabel(receipt.payment.method),
     transactionId: receipt.payment.transactionId ?? "",
     cardLast4: receipt.payment.cardLast4 ?? "",
+    // The number the money was sent from. It is the student's own number, and
+    // the receipt has a place for it, so the student can check the payment
+    // against the statement of their own wallet.
+    senderMobile: receipt.payment.senderMobile ?? "",
     items: receipt.payment.items.map((item) => ({
       item: item.fee.label,
       dueDate: formatDate(item.fee.dueDate),
       amount: formatPoisha(item.amountPoisha),
     })),
-    total: Math.round(receipt.amountPoisha / 100),
+    totalPoisha: receipt.amountPoisha,
     student: {
       name: receipt.student.name,
       studentId: receipt.student.studentId,
@@ -318,6 +327,22 @@ const PAYMENT_WINDOW_MINUTES = 10;
 const PAYMENT_WINDOW_LIMIT = 5;
 
 /**
+ * Hides all but the last four digits of a mobile number.
+ *
+ * The office matches a payment with the statement of the wallet, and it
+ * needs the last four digits to do it. The rest of the number is nobody
+ * else's business: the audit log and any other list of changes carry the
+ * masked form.
+ */
+export function maskMobile(mobile: string): string {
+  const digits = mobile.replace(/\D/g, "");
+
+  if (digits.length <= 4) return digits;
+
+  return `${"*".repeat(digits.length - 4)}${digits.slice(-4)}`;
+}
+
+/**
  * Submits a payment request.
  *
  * The request is written as a `PENDING` payment with its fee lines. It does
@@ -335,11 +360,13 @@ export async function submitStudentPayment(
   { ok: true; data: { paymentId: string; amountPoisha: number } }
   | { ok: false; error: string }
 > {
-  const student = await currentStudent();
+  const identity = await requireStudent();
 
-  if (!student) {
+  if (!identity.ok) {
     return { ok: false, error: "You are not allowed to do that" };
   }
+
+  const student = identity.data;
 
   const parsed = studentPaymentSchema.safeParse(raw);
 
@@ -352,56 +379,11 @@ export async function submitStudentPayment(
 
   const input = parsed.data;
 
-  // The rate limit is checked before anything is read, so a flood of
-  // submissions costs one count.
-  const since = new Date(Date.now() - PAYMENT_WINDOW_MINUTES * 60 * 1000);
-
-  const recent = await prisma.payment.count({
-    where: { studentId: student.id, createdAt: { gte: since } },
-  });
-
-  if (recent >= PAYMENT_WINDOW_LIMIT) {
-    return {
-      ok: false,
-      error: "Too many payment requests. Please wait a few minutes and try again.",
-    };
-  }
-
-  const feeIds = [...new Set(input.feeIds)];
-
-  // The lines are read with the student in the same query, so a line of
-  // another student is simply not there.
-  const fees = await prisma.fee.findMany({
-    where: { id: { in: feeIds }, studentId: student.id },
-    select: {
-      id: true,
-      label: true,
-      amountPoisha: true,
-      status: true,
-      payments: {
-        where: { payment: { status: "PENDING" } },
-        select: { paymentId: true },
-        take: 1,
-      },
-    },
-  });
-
-  if (fees.length !== feeIds.length) {
-    return { ok: false, error: "One of those fees does not exist" };
-  }
-
-  if (fees.some((fee) => fee.status === "PAID")) {
-    return { ok: false, error: "One of those fees has already been paid" };
-  }
-
-  if (fees.some((fee) => fee.payments.length > 0)) {
-    return {
-      ok: false,
-      error: "One of those fees is already waiting for verification",
-    };
-  }
-
-  const total = fees.reduce((sum, fee) => sum + fee.amountPoisha, 0);
+  // The lines are sorted, so two payments that settle the same lines always
+  // take the locks in the same order. Without the order two payments that
+  // settle the same two lines could wait for each other and one of them would
+  // fail with a deadlock.
+  const feeIds = [...new Set(input.feeIds)].sort();
 
   if (input.transactionId) {
     const clash = await prisma.payment.findUnique({
@@ -418,7 +400,80 @@ export async function submitStudentPayment(
   }
 
   try {
-    const paymentId = await prisma.$transaction(async (tx) => {
+    const outcome = await prisma.$transaction(async (tx) => {
+      // The fee lines are locked for the length of the transaction, so a
+      // second submission of the same line waits here until the first one is
+      // done. Without the lock both submissions would read "not pending" and
+      // both would write a payment.
+      //
+      // The lock is taken on the lines of this student only, and the query is
+      // parameterised, so nothing the browser sent reaches the statement.
+      await tx.$queryRaw`
+        SELECT "id"
+        FROM "fees"
+        WHERE "id" IN (${Prisma.join(feeIds)})
+          AND "student_id" = ${student.id}
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+
+      // The lines are read again with the student in the same query, so a line
+      // of another student is simply not there.
+      const fees = await tx.fee.findMany({
+        where: { id: { in: feeIds }, studentId: student.id },
+        select: {
+          id: true,
+          label: true,
+          amountPoisha: true,
+          status: true,
+          payments: {
+            where: { payment: { status: "PENDING" } },
+            select: { paymentId: true },
+            take: 1,
+          },
+        },
+      });
+
+      if (fees.length !== feeIds.length) {
+        return { ok: false as const, error: "One of those fees does not exist" };
+      }
+
+      if (fees.some((fee) => fee.status === "PAID")) {
+        return {
+          ok: false as const,
+          error: "One of those fees has already been paid",
+        };
+      }
+
+      if (fees.some((fee) => fee.payments.length > 0)) {
+        return {
+          ok: false as const,
+          error: "One of those fees is already waiting for verification",
+        };
+      }
+
+      const total = fees.reduce((sum, fee) => sum + fee.amountPoisha, 0);
+
+      // The rate limit is counted inside the transaction, so the count and the
+      // write belong to the same moment. It is a guard against a flood of
+      // requests and it is best-effort: two requests sent at the same moment
+      // can both pass it, because the limit is about the number of requests
+      // and not about the safety of the fee lines. The safety of the lines is
+      // the lock and the check above.
+      const since = new Date(Date.now() - PAYMENT_WINDOW_MINUTES * 60 * 1000);
+
+      const recent = await tx.payment.count({
+        where: { studentId: student.id, createdAt: { gte: since } },
+      });
+
+      if (recent >= PAYMENT_WINDOW_LIMIT) {
+        return {
+          ok: false as const,
+          error:
+            "Too many payment requests. Please wait a few minutes and try again.",
+        };
+      }
+
       const payment = await tx.payment.create({
         data: {
           studentId: student.id,
@@ -446,25 +501,41 @@ export async function submitStudentPayment(
         })),
       });
 
-      return payment.id;
+      return {
+        ok: true as const,
+        paymentId: payment.id,
+        total,
+        feeCount: fees.length,
+      };
     });
+
+    if (!outcome.ok) {
+      return { ok: false, error: outcome.error };
+    }
 
     await writeAudit({
       actorId: student.userId,
       action: "Payment submitted",
       entityType: "Payment",
-      entityId: paymentId,
+      entityId: outcome.paymentId,
       // The card digits are never written down: the audit log is a record of
       // what the school did, not a place to keep card data.
       metadata: {
         method: input.method,
-        amountPoisha: total,
-        feeCount: fees.length,
+        amountPoisha: outcome.total,
+        feeCount: outcome.feeCount,
         transactionId: input.transactionId ?? null,
+        // The number the money was sent from, with all but the last four
+        // digits hidden: the office matches the payment with the statement of
+        // the wallet, and the audit log is not the place to keep the number.
+        senderMobile: input.senderMobile ? maskMobile(input.senderMobile) : null,
       },
     });
 
-    return { ok: true, data: { paymentId, amountPoisha: total } };
+    return {
+      ok: true,
+      data: { paymentId: outcome.paymentId, amountPoisha: outcome.total },
+    };
   } catch {
     return { ok: false, error: "The payment could not be submitted" };
   }

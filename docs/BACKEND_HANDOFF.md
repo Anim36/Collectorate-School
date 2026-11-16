@@ -1,8 +1,8 @@
 # Backend handoff
 
-The admin portal and the sign-in already run on the database; the public pages,
-the student portal and the teacher portal still run on the mock data in
-`src/data`. This document names the table each mock file becomes, and every
+The admin portal, the sign-in and the student portal already run on the
+database; the public pages and the teacher portal still run on the mock data
+in `src/data`. This document names the table each mock file becomes, and every
 place where a change lives only in the browser's memory, together with the API
 endpoint it will need.
 
@@ -39,7 +39,7 @@ when the backend arrives.
 | `src/data/portal-navigation.ts` | `portal_nav_items` | The sidebar and the bottom tab bar of each role. The role is a column, not a separate table. |
 | `src/data/public-pages.ts` | `admission_steps`, `fee_structure`, `staff`, `about_content` | `admissionSteps` → `admission_steps`; `admissionFeeRows` → `fee_structure`; `staffMembers` → `staff`; `aboutTimeline` and the `about*` copy → `about_content`. |
 | `src/data/routine.ts` | `routines`, `routine_periods`, `classes` | The public routine reads the same `routines` table as the admin routine. |
-| `src/data/student.ts` | `students`, `attendance`, `exam_results`, `fees`, `payments`, `receipts` | `studentProfile` → `students`; `attendanceMonths` → `attendance`; `examResults` → `exam_results`; `dueFees` → `fees`; `paymentHistory` → `payments`; the receipt list → `receipts`. |
+| `src/data/student.ts` | `students`, `attendance`, `exam_results`, `fees`, `payments`, `receipts` | Gone. The student portal reads the database now (`src/server/services/student-*.ts`). |
 | `src/data/teacher-gallery.ts` | `gallery_photos`, `gallery_albums` | `teacherUploads` → `gallery_photos` with `status = 'awaiting_approval'`; `teacherGalleryAlbums` → `gallery_albums`. |
 | `src/data/teacher-notices.ts` | `notices` | The teacher notice board reads the same `notices` table, filtered by `audience`. |
 | `src/data/teacher-results.ts` | `exam_results`, `exams`, `result_sheets` | `teacherExams` → `exams`; `teacherResultSheets` → `result_sheets`; the marks inside a sheet → `exam_results`. |
@@ -141,29 +141,39 @@ is not visible to the students afterwards.
 | Save the draft | `PUT /api/result_sheets/:id` with the marks |
 | Publish the sheet | `POST /api/result_sheets/:id/publish` |
 
-### 2.3 Fee payment — `src/data/student.ts` and `src/components/student/student-payment-method.tsx`
+### 2.3 Fee payment — `src/server/services/student-fees.ts` and `src/components/student/student-payment-method.tsx`
 
-The payment method page records the payment into the module-level
-`paymentStore` in `src/data/student.ts`. The fees table and the receipt read
-that store, so the three fee pages agree with each other — but the payment is
-gone when the tab is closed.
+The student side of the fee payment is on the database now
+(`src/server/services/student-fees.ts`): the payment method page and the
+payment modal write a `PENDING` payment with its `payment_items`, the amount
+is worked out on the server from the fee lines the payment settles, and the
+fees page, the dashboard and the payment history all read the student's own
+rows. The mock `paymentStore` of `src/data/student.ts` is gone.
 
-Only the last four digits of a card are kept: `recordPayment()` receives
-`cardLast4` and never the full number. The endpoint must not accept the full
-number either.
+Only the last four digits of a card are kept: `submitStudentPayment()` takes
+`cardLast4` and never the full number, and the endpoint refuses a full number
+as well.
 
-The admin side of the fee payment is on the database now
-(`src/server/services/fees.ts`), and it already holds the rules the student
-side needs: the money is an integer number of poisha, the payment, its receipt
-and the new state of the fee lines are written in one transaction, and a
-payment a student submits waits in `PENDING` until the admin approves it. A
-student payment therefore becomes a `PENDING` row, and the admin queue is
-`listPendingPayments()`.
+Two submissions of the same fee line at the same moment are safe. The service
+locks the fee lines it settles (`SELECT … FOR UPDATE`) and reads them again
+inside the transaction, so the second submission waits for the first one and
+is then refused. The database holds the rule as well: a fee line can sit in
+one unsettled payment only, and a trigger refuses a second waiting item for
+the same line even for a write that skips the application.
+
+A payment a student submits waits for the admin. The admin side of the fee
+payment is on the database (`src/server/services/fees.ts`), and it already
+holds the rules the student side needs: the money is an integer number of
+poisha, the payment, its receipt and the new state of the fee lines are
+written in one transaction. The admin queue is `listPendingPayments()`, and it
+carries the number the money was sent from in full, so the office can match
+the payment with the statement of the wallet. The audit log carries the masked
+form of that number and never the full one.
 
 | Need | Endpoint |
 | --- | --- |
 | List the fees of the student | `GET /api/students/me/fees` |
-| Pay | `POST /api/payments` with the fee ids, the method, the transaction id and (for a card) `card_last4` only |
+| Pay | `POST /api/payments` with the fee ids, the method, the transaction id, the sender's number and (for a card) `card_last4` only |
 | The receipt | `GET /api/receipts/:id` |
 | The fee status after the payment | `GET /api/students/me/fees` again, or a `fees` refetch after the payment resolves |
 
@@ -202,7 +212,13 @@ the classes, the notices, the gallery, the routine, the calendar, the fees, the
 audit log and the dashboard all read and write the school through
 `src/app/admin/actions.ts` and the services behind it.
 
-What is left is the public pages, the student portal and the teacher portal.
+The student portal is on the database as well: the dashboard, the profile, the
+attendance, the performance, the result, the fees, the receipt, the notice board
+and the gallery all read the student's own rows through
+`src/server/services/student-*.ts`. Every read is read-only, so no GET page
+writes anything.
+
+What is left is the public pages and the teacher portal.
 
 1. **Read only.** `students`, `teachers`, `attendance`, `exam_results`,
    `notices`, `gallery_albums`, `gallery_photos`, `calendar_events`,

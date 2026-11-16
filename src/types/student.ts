@@ -25,8 +25,6 @@ export interface StudentProfile {
   status: string;
   /** Class the student is enrolled in. */
   className: string;
-  /** Section the student is enrolled in, e.g. "Default". */
-  sectionName: string;
   /** Roll number within the class. */
   roll: string;
   /** Date of birth, as the page writes it. */
@@ -79,6 +77,13 @@ export interface StudentAttendanceMonth {
     /** Attendance state for the day. */
     status: StudentAttendanceStatus;
   }[];
+  /**
+   * The days of the month the school closed.
+   *
+   * They come from the school calendar, so a day the school was closed shows
+   * a dash even when no attendance was marked for it.
+   */
+  holidayDays: readonly number[];
   /** The counts of the month. */
   summary: StudentAttendanceSummary;
 }
@@ -295,6 +300,8 @@ export interface StudentReceiptData {
   transactionId: string;
   /** Last four digits of the card, when a card paid. */
   cardLast4: string;
+  /** The number the money was sent from, when a wallet paid. */
+  senderMobile: string;
   /** The items the receipt settles. */
   items: readonly {
     /** What the fee is for. */
@@ -304,8 +311,8 @@ export interface StudentReceiptData {
     /** Amount paid, e.g. "৳ 1,500". */
     amount: string;
   }[];
-  /** Total paid, in taka. */
-  total: number;
+  /** Total paid, in poisha. */
+  totalPoisha: number;
   /** The student the receipt belongs to. */
   student: {
     /** Full name. */

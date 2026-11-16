@@ -195,3 +195,39 @@ the `receipt_counters` counter when the admin approves the payment.
   payment history. The reason is kept with the payment (`review_note`), and
   the copy that tells the student about it belongs to the same step.
 
+## The weekly holidays are a setting of the code, not of the school
+
+The attendance calendar shows a dash on the days the school does not teach on.
+Those days are read from `src/config/school.ts`, which holds Friday and
+Saturday, so there is one place that holds the rule and the calendar cannot
+drift away from it.
+
+The setting is still the school's decision, and the school cannot change it
+without a change of the code and a deploy.
+
+- It belongs in the Admin portal, next to the other settings of the school, so
+  an admin can change it and the change is recorded in the audit log.
+- The days the school was closed on a particular date are already on the
+  database (`calendar_events` with `type = 'HOLIDAY'`), and the calendar reads
+  them. Only the recurring weekly days are held in the code.
+- The routine page says the same thing in a sentence ("Friday & Saturday:
+  weekly holidays"), so that sentence has to follow the setting as well.
+
+## The "new notices" count is a window, not a visit
+
+The dashboard counts the notices that were published in the last seven days and
+labels them "In the last 7 days". Before, the count was the notices that had
+arrived since the student's last visit, and the visit was recorded on the
+`students` table.
+
+The window replaced the visit for one reason: **a GET page must not write.**
+The dashboard is read on every visit, so recording the visit turned a read into
+a write, and the count then depended on a row the page itself had changed. The
+window is read-only and the figure is the same on every read.
+
+- The window of seven days is a decision of the school, so it belongs in the
+  same place as the weekly holidays: an Admin setting.
+- The `students.last_visited_at` column and its migration are gone
+  (`prisma/migrations/20261112100000_student_payment_safety`), so nothing reads
+  a visit any more.
+

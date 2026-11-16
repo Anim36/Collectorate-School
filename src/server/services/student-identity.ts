@@ -23,21 +23,12 @@ export interface StudentIdentity {
   classId: string;
   /** The name of the class, e.g. "Class 9". */
   className: string;
-  /** The name of the section the student is in, e.g. "Default". */
-  sectionName: string;
   /** Whether the class is graded on a grade point or on a letter grade only. */
   gradeOnly: boolean;
   /** The roll number of the student inside the class. */
   roll: number;
   /** The id of the academic year the student belongs to. */
   academicYearId: string;
-  /**
-   * When the student last opened the portal.
-   *
-   * The dashboard counts the notices that were published since then, so the
-   * figure follows the student's own last visit.
-   */
-  lastVisitedAt: Date | null;
 }
 
 /**
@@ -65,8 +56,6 @@ export async function currentStudent(): Promise<StudentIdentity | null> {
       roll: true,
       academicYearId: true,
       class: { select: { name: true, gradingMode: true } },
-      section: { select: { name: true } },
-      lastVisitedAt: true,
     },
   });
 
@@ -79,11 +68,9 @@ export async function currentStudent(): Promise<StudentIdentity | null> {
     name: student.name,
     classId: student.classId,
     className: student.class.name,
-    sectionName: student.section.name,
     gradeOnly: student.class.gradingMode === "GRADE_ONLY",
     roll: student.roll,
     academicYearId: student.academicYearId,
-    lastVisitedAt: student.lastVisitedAt,
   };
 }
 
@@ -104,16 +91,3 @@ export async function requireStudent(): Promise<
 
   return { ok: true, data: student };
 }
-
-/**
- * The refusal a student service gives when a record is not theirs.
- *
- * A record that belongs to another student is reported the same way as a
- * record that does not exist, so an id cannot be probed. Every lookup that
- * takes an id carries the student in its own where clause, so the check is
- * part of the query rather than a second round trip.
- */
-export const NOT_YOURS: { ok: false; error: string } = {
-  ok: false,
-  error: "That record does not exist",
-};

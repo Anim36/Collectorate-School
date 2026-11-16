@@ -14,6 +14,7 @@ import { StudentPageHeader } from "@/components/student/student-page-header";
 import { useSetPortalSection } from "@/components/layout/portal-section-context";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { formatPoisha } from "@/lib/money";
 import { submitStudentPaymentAction } from "@/app/student/actions";
 import type { StudentPayableFee } from "@/types/student";
 
@@ -288,9 +289,9 @@ export function StudentPaymentMethod({
               Total
             </dt>
             <dd className="text-title font-semibold leading-[1.45] text-ink">
-              {items
-                .reduce((sum, item) => sum + item.amountPoisha, 0)
-                .toLocaleString("en-US")}
+              {formatPoisha(
+                items.reduce((sum, item) => sum + item.amountPoisha, 0),
+              )}
             </dd>
           </div>
         </dl>

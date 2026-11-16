@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { prisma } from "@/server/db";
 import { htmlToText } from "@/server/sanitize";
+import { requireStudent } from "@/server/services/student-identity";
 import { studentNoticeFilterSchema } from "@/server/services/student-schemas";
 import type {
   StudentGalleryAlbum,
@@ -71,6 +72,10 @@ function studentNoticesWhere(): Prisma.NoticeWhereInput {
  * The published notices the student may read, newest first.
  */
 export async function listStudentNotices(): Promise<StudentNoticeRow[]> {
+  const identity = await requireStudent();
+
+  if (!identity.ok) return [];
+
   const notices = await prisma.notice.findMany({
     where: studentNoticesWhere(),
     orderBy: [{ publishedOn: "desc" }, { createdAt: "desc" }],
@@ -96,20 +101,21 @@ export async function listStudentNotices(): Promise<StudentNoticeRow[]> {
 }
 
 /**
- * The number of notices that were published since the student's last visit.
+ * The number of notices that were published in the last seven days.
  *
  * The count is made by the database, over the notices the student may read,
  * so the figure on the dashboard is the number of notices that really arrived.
- * A student who has never signed in has not seen any of them, so every notice
- * counts as new.
+ * The window is read-only: no GET page writes anything, so the figure is the
+ * same on every read and the dashboard does not need a visit to be recorded.
  */
-export async function countStudentNoticesSince(
-  since: Date | null,
-): Promise<number> {
+export async function countStudentNoticesSince(): Promise<number> {
+  // The window is seven days long, ending now.
+  const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
   return prisma.notice.count({
     where: {
       ...studentNoticesWhere(),
-      ...(since ? { publishedOn: { gt: since } } : {}),
+      publishedOn: { gte: from },
     },
   });
 }
@@ -125,6 +131,19 @@ export async function countStudentNoticesSince(
 export async function getStudentNoticeBoard(
   raw: Partial<StudentNoticeFilterInput> = {},
 ): Promise<StudentNoticeBoard> {
+  const identity = await requireStudent();
+
+  if (!identity.ok) {
+    return {
+      rows: [],
+      total: 0,
+      page: 0,
+      pageSize: 3,
+      pageCount: 1,
+      categories: ["All categories"],
+    };
+  }
+
   const parsed = studentNoticeFilterSchema.safeParse(raw);
 
   const input = parsed.success
@@ -226,6 +245,10 @@ export async function getStudentNoticeBoard(
 export async function getStudentNotice(
   noticeId: string,
 ): Promise<StudentNoticeDetail | null> {
+  const identity = await requireStudent();
+
+  if (!identity.ok) return null;
+
   const notice = await prisma.notice.findFirst({
     where: {
       id: noticeId,
@@ -301,6 +324,10 @@ export async function listStudentNoticeCategories(): Promise<string[]> {
 export async function listStudentGalleryAlbums(): Promise<
   StudentGalleryAlbum[]
 > {
+  const identity = await requireStudent();
+
+  if (!identity.ok) return [];
+
   const albums = await prisma.galleryAlbum.findMany({
     where: { visibility: "PUBLIC" },
     orderBy: { title: "asc" },
@@ -358,6 +385,10 @@ export async function listStudentGalleryAlbums(): Promise<
 export async function getStudentGalleryAlbum(
   albumId: string,
 ): Promise<StudentGalleryAlbum | null> {
+  const identity = await requireStudent();
+
+  if (!identity.ok) return null;
+
   const album = await prisma.galleryAlbum.findFirst({
     where: {
       OR: [{ slug: albumId }, { id: albumId }],

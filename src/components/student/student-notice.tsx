@@ -181,7 +181,9 @@ export function StudentNotice({
         }
       />
 
-      <StudentNoticeEmptyState />
+      {/* The empty state is only shown when there is really nothing to read:
+          a board with notices on it never carries it. */}
+      {rows.length === 0 ? <StudentNoticeEmptyState /> : null}
     </div>
   );
 }

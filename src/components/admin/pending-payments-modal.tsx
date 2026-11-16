@@ -100,6 +100,15 @@ export function PendingPaymentsModal({
                     : ` · ${payment.transactionId}`}
                 </p>
 
+                {/* The number the money was sent from. The office matches the
+                    payment with the statement of the wallet, so it needs the
+                    whole number here. */}
+                {payment.senderMobile === "" ? null : (
+                  <p className="text-caption leading-[1.45] text-muted">
+                    Sent from {payment.senderMobile}
+                  </p>
+                )}
+
                 {rejecting === payment.id ? (
                   <div className="flex w-full flex-col gap-3">
                     <AdminTextAreaField

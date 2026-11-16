@@ -86,7 +86,7 @@ export function StudentPaymentReceipt({
         </h3>
 
         <p className="text-display font-semibold leading-[1.45] text-ink">
-          {formatPoisha(receipt.total * 100)}
+          {formatPoisha(receipt.totalPoisha)}
         </p>
 
         {/* The receipt details, on Figma's 138px band of three lines. */}
@@ -174,7 +174,7 @@ export function StudentPaymentReceipt({
                 Total
               </td>
               <td className="border-t border-border py-3 pl-3 pr-0 text-body font-semibold leading-[1.45] text-ink">
-                {formatPoisha(receipt.total * 100)}
+                {formatPoisha(receipt.totalPoisha)}
               </td>
             </tr>
           </tfoot>
@@ -189,6 +189,9 @@ export function StudentPaymentReceipt({
           <ReceiptRow label="Payment method" value={receipt.method} />
           {receipt.cardLast4 ? (
             <ReceiptRow label="Card" value={`•••• ${receipt.cardLast4}`} />
+          ) : null}
+          {receipt.senderMobile ? (
+            <ReceiptRow label="Sent from" value={receipt.senderMobile} />
           ) : null}
           <ReceiptRow label="Transaction ID" value={receipt.transactionId} />
           <ReceiptRow label="Status" value="Paid" />

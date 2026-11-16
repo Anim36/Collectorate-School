@@ -17,10 +17,65 @@ import { navItems } from "@/data/navigation";
 import { notices } from "@/data/notices";
 import { routineTimetable } from "@/data/routine";
 import { calendarEvents } from "@/data/calendar";
-import { studentProfile } from "@/data/student";
 import { teacherClasses, teacherRolls } from "@/data/teacher";
 import { adminCalendarRows, adminNotices } from "@/data/admin-11b";
 import { adminAuditEvents, adminFeeStructure, adminPayments } from "@/data/admin-11c";
+
+/**
+ * The student the portal is measured with.
+ *
+ * The seed writes this row as the demo student, so the pages of the portal
+ * show a real student with a real record.
+ */
+const studentProfile = {
+  name: "Arif Hasan",
+  studentId: "ST-2026-0042",
+  className: "Class 9",
+  email: "arif.hasan@example.com",
+  guardian: "Md. Kamal Hasan · Father",
+  guardianPhone: "+880 1712 345678",
+  emergencyContact: "+880 1812 345678",
+  address: "Dhanmondi, Dhaka 1209",
+} as const;
+
+/**
+ * The payments of the demo student.
+ *
+ * The student portal shows a payment history, so the demo student has one
+ * payment that was made — with its receipt — and one that still waits for the
+ * school. The waiting payment carries the number the money was sent from,
+ * because that is what the office matches with the statement of the wallet.
+ */
+export const DEMO_STUDENT_PAYMENTS = [
+  {
+    /** The receipt of the payment that was made. */
+    receiptNo: "RCP-2026-0042",
+    /** How the money was sent. */
+    method: "bKash",
+    /** The identifier the sender quoted. */
+    transactionId: "TX-RCP-2026-0042",
+    /** The number the money was sent from. */
+    senderMobile: "01712345678",
+    /** The day the payment was made. */
+    paidOn: "2026-11-02",
+    /** Whether the payment was settled. */
+    settled: true,
+  },
+  {
+    /** The receipt number the waiting payment will carry once it is settled. */
+    receiptNo: "RCP-2026-0043",
+    /** How the money was sent. */
+    method: "Nagad",
+    /** The identifier the sender quoted. */
+    transactionId: "TX-RCP-2026-0043",
+    /** The number the money was sent from. */
+    senderMobile: "01898765432",
+    /** The day the payment was submitted. */
+    paidOn: "2026-11-09",
+    /** Whether the payment was settled. */
+    settled: false,
+  },
+] as const;
 
 /* ------------------------------------------------------------------ types --- */
 

@@ -122,6 +122,14 @@ export interface AdminPendingPayment {
   method: string;
   /** The identifier the sender quoted. */
   transactionId: string;
+  /**
+   * The number the money was sent from.
+   *
+   * The admin sees it in full on the pending screen, so the office can match
+   * the payment with the statement of the wallet. It is never written to the
+   * audit log in full.
+   */
+  senderMobile: string;
   /** The amount of the payment, in poisha. */
   amountPoisha: number;
   /** The amount as the list shows it, e.g. "৳ 1,500". */

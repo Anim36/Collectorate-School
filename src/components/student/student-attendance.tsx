@@ -131,6 +131,7 @@ export function StudentAttendance({ months, initial }: StudentAttendanceProps) {
           year={initial.year}
           month={initial.month}
           statuses={statuses}
+          holidayDays={initial.holidayDays}
         />
       ) : (
         <p className="text-body leading-[1.45] text-muted">

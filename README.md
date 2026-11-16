@@ -9,8 +9,8 @@ it was built from, at 1440, 768 and 375 pixels, in the light and the dark
 theme. The verification scripts that do this live in `scripts/` and are
 documented in [`scripts/README.md`](scripts/README.md).
 
-The public pages, the student portal and the teacher portal still run on mock
-data; the admin portal reads and writes the school in the database.
+The admin portal and the student portal read and write the school in the
+database; the public pages and the teacher portal still run on mock data.
 [`docs/BACKEND_HANDOFF.md`](docs/BACKEND_HANDOFF.md) names the table each
 mock file becomes and every endpoint the in-memory changes will need.
 
@@ -53,6 +53,7 @@ The dev server runs on <http://localhost:3000>.
 | `npm run qa:admin-11b-security` | The upload rules, the file names and the sanitizing of the notice body. |
 | `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP. Needs the server on port 3111. |
 | `npm run qa:admin-11c` | The admin fees, audit log and dashboard services. |
+| `npm run qa:student-b5` | The student portal: every student route with a real session, the isolation of one student's data from another's and the payment race. |
 
 ### Environment
 
@@ -280,6 +281,8 @@ src/
                            The components of the portals.
   data/                    The mock data. Each file becomes a backend table;
                            see docs/BACKEND_HANDOFF.md.
+  config/                  The settings of the school that are not in the
+                           database.
   hooks/                   use-toast and use-focus-trap.
   lib/                     The cn helper and the theme scope.
   types/                   The shared types.

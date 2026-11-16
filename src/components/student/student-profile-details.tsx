@@ -2,16 +2,16 @@ import { cn } from "@/lib/utils";
 import type { StudentProfile } from "@/types/student";
 
 export interface StudentDetailFieldProps {
-  /** Field label, e.g. "Class / Section". */
+  /** Field label, e.g. "Class". */
   label: string;
-  /** Field value, e.g. "Class 9 / A". */
+  /** Field value, e.g. "Class 9". */
   value: string;
   className?: string;
 }
 
 /**
  * One profile detail field.
- * Figma "Class / Section value" (2:3943 desktop, 2:3996 tablet, 2:4068
+ * Figma "Class value" (2:3943 desktop, 2:3996 tablet, 2:4068
  * mobile): a 19px label above a 49px value box that holds a 23px line with a
  * 25px inset.
  */
@@ -51,10 +51,7 @@ export function StudentProfileDetails({
   className?: string;
 }) {
   const fields: readonly { label: string; value: string }[] = [
-    {
-      label: "Class / Section",
-      value: `${profile.className} / ${profile.sectionName}`,
-    },
+    { label: "Class", value: profile.className },
     { label: "Roll number", value: profile.roll },
     { label: "Date of birth", value: profile.dateOfBirth },
     { label: "Guardian", value: profile.guardian },

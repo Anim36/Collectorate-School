@@ -2,14 +2,13 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { studentWelcome } from "@/data/student";
 
 export interface StudentWelcomeProps {
   className?: string;
 }
 
 /**
- * The welcome panel above the dashboard metrics.
+ * The copy of the welcome panel above the dashboard metrics.
  *
  * Figma "Learning welcome" (2:3662 desktop, 2:3728 tablet, 2:3813 mobile):
  *
@@ -20,6 +19,14 @@ export interface StudentWelcomeProps {
  *
  * The panel keeps Figma's 16px rhythm between its three children.
  */
+const studentWelcome = {
+  title: "Your next chapter starts today.",
+  // Figma's welcome copy runs to one line on desktop and tablet and wraps to
+  // three lines on mobile, so the sentence is sized to sit between the two.
+  body: "Annual exams begin 01 December. A little progress, every day, adds up to something.",
+  actionLabel: "View exam routine",
+  actionHref: "/student/result",
+} as const;
 export function StudentWelcome({ className }: StudentWelcomeProps) {
   return (
     <section

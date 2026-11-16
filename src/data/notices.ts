@@ -352,40 +352,9 @@ export const noticeDefaultRange = {
   to: "2026-11-30",
 } as const;
 
-/** The default range of the student portal notice board. */
-export const studentNoticeDefaultRange = {
-  from: "2026-10-01",
-  to: "2026-11-30",
-} as const;
-
-/**
- * The notices addressed to the signed-in student.
- *
- * The portal board shows the notices published for students and for
- * everyone, newest first. Figma "Student / Notice" (2:5442 / 2:5512 / 2:5564)
- * opens on the three school-wide notices of 04, 02 and 01 November; the
- * student-only notices follow them.
- */
-export const studentNotices: readonly Notice[] = notices
-  .filter(
-    (notice) =>
-      notice.audience.includes("students") ||
-      notice.audience.includes("everyone"),
-  )
-  .sort((a, b) => Date.parse(b.publishedOn) - Date.parse(a.publishedOn));
-
 /** Finds a notice by its route identifier. */
 export function findNotice(noticeId: string): Notice | undefined {
   return notices.find((notice) => notice.id === noticeId);
-}
-
-/**
- * Finds a notice that the signed-in student is allowed to read.
- * Notices addressed only to guardians or staff are not reachable from the
- * student portal.
- */
-export function findStudentNotice(noticeId: string): Notice | undefined {
-  return studentNotices.find((notice) => notice.id === noticeId);
 }
 
 /** Formats an ISO date the way the Figma frames show it, e.g. "04 November 2026". */

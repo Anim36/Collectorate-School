@@ -379,6 +379,7 @@ export async function listPendingPayments(): Promise<AdminPendingPayment[]> {
       amountPoisha: true,
       method: true,
       transactionId: true,
+      senderMobile: true,
       createdAt: true,
       student: {
         select: {
@@ -398,6 +399,10 @@ export async function listPendingPayments(): Promise<AdminPendingPayment[]> {
     className: payment.student.class.name,
     method: methodLabel(payment.method),
     transactionId: payment.transactionId ?? "",
+    // The number the money was sent from, shown in full to the admin on the
+    // pending screen: the office matches the payment with the statement of
+    // the wallet, and it needs the whole number to do it.
+    senderMobile: payment.senderMobile ?? "",
     amountPoisha: payment.amountPoisha,
     amount: formatPoisha(payment.amountPoisha),
     feeCount: payment.items.length,
