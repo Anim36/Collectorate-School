@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { portalIcons } from "@/components/layout/portal-icons";
 import { isActivePortalPath } from "@/components/layout/portal-sidebar";
-import type { PortalNavItem } from "@/data/portal-navigation";
+import type { PortalNavItem } from "@/types/portal";
 import { cn } from "@/lib/utils";
 
 export interface PortalMoreMenuProps {

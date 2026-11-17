@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { deleteQaAuditRows } from "./audit-cleanup";
 
 /**
  * The role checks for the admin actions.
@@ -57,10 +58,8 @@ async function cleanup(): Promise<void> {
 
   const userIds = users.map((user) => user.id);
 
-  await prisma.auditLog.deleteMany({ where: { actorId: { in: userIds } } });
-  await prisma.auditLog.deleteMany({
-    where: { entityId: { in: userIds } },
-  });
+  await deleteQaAuditRows(prisma, { actorIds: userIds });
+  await deleteQaAuditRows(prisma, { entityIds: userIds });
   await prisma.student.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.teacher.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });

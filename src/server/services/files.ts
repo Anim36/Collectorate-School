@@ -1,6 +1,7 @@
 import { prisma } from "@/server/db";
 import {
   deleteFile,
+  listStoredFileKeys,
   readFileBytes,
   saveFile,
   MAX_FILES_PER_REQUEST,
@@ -281,6 +282,39 @@ export async function readStoredFile(
     mimeType: file.mimeType,
     name: file.originalName,
   };
+}
+
+/**
+ * Removes the files on the disk that no `stored_files` row points at.
+ *
+ * A file is written first and linked to a notice or an album second, so a
+ * request that is interrupted between the two leaves a file nobody can reach.
+ * The sweep is the repair: the database is the record of what the school
+ * owns, and a file with no row is removed.
+ *
+ * It never removes a row. A row whose file is already gone is left alone; the
+ * row is still the record that the file existed.
+ */
+export async function sweepOrphanUploads(): Promise<{
+  scanned: number;
+  removed: string[];
+}> {
+  const [keys, rows] = await Promise.all([
+    listStoredFileKeys(),
+    prisma.storedFile.findMany({ select: { storageKey: true } }),
+  ]);
+
+  const known = new Set(rows.map((row) => row.storageKey));
+  const removed: string[] = [];
+
+  for (const key of keys) {
+    if (known.has(key)) continue;
+
+    await deleteFile(key);
+    removed.push(key);
+  }
+
+  return { scanned: keys.length, removed };
 }
 
 /**

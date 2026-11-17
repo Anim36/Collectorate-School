@@ -2,11 +2,11 @@ import Link from "next/link";
 
 import { TablePagination } from "@/components/shared/table-pagination";
 import { cn } from "@/lib/utils";
-import type { Notice } from "@/data/notices";
+import type { PublicNoticeRow } from "@/types/public";
 
 export interface NoticeBoardTableProps {
   /** Notices rendered in the current view. */
-  notices: readonly Notice[];
+  notices: readonly PublicNoticeRow[];
   /** Number of notices matching the filters. */
   totalRecords: number;
   /** Zero-based index of the visible page. */

@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { deleteQaAuditRows } from "./audit-cleanup";
 import {
   GENERIC_AUTH_ERROR,
   MAX_FAILED_LOGINS,
@@ -99,9 +100,7 @@ async function createTestAccounts(): Promise<void> {
 
 /** Removes the accounts the tests use. */
 async function removeTestAccounts(): Promise<void> {
-  await prisma.auditLog.deleteMany({
-    where: { entityId: { in: Object.values(IDS) } },
-  });
+  await deleteQaAuditRows(prisma, { entityIds: Object.values(IDS) });
 
   await prisma.user.deleteMany({
     where: { loginId: { in: Object.values(IDS) } },
@@ -380,7 +379,7 @@ async function main(): Promise<void> {
     JSON.stringify(studentOnAdminTab),
   );
 
-  /* --- 10. A mismatch counts as a failed attempt. ------------------------ */
+  /* --- 10. A mismatch does not count as a failed password attempt (B7 requirement). */
 
   await resetAccount(IDS.student, { failedLoginCount: 0 });
 
@@ -396,8 +395,8 @@ async function main(): Promise<void> {
   });
 
   check(
-    "a role mismatch increases the failed login count",
-    afterMismatch?.failedLoginCount === 1,
+    "a role mismatch does not count as a failed password attempt for lockout",
+    afterMismatch?.failedLoginCount === 0,
     JSON.stringify(afterMismatch),
   );
 

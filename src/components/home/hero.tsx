@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { schoolStats } from "@/data/home";
+import { EXCELLENCE_LINE, SITE } from "@/config/site";
+import type { PublicSchoolStat } from "@/types/public";
 
 /**
  * Home page hero.
@@ -11,7 +12,11 @@ import { schoolStats } from "@/data/home";
  * "school at a glance" figures. The headline is 56px from tablet up and
  * 48px on mobile, where the two title lines wrap.
  */
-export function Hero() {
+export function Hero({
+  schoolStats,
+}: {
+  schoolStats: readonly PublicSchoolStat[];
+}) {
   return (
     <section className="relative isolate flex w-full flex-col items-start gap-6 overflow-hidden px-6 py-10 md:px-8 md:py-20 xl:px-20">
       <Image
@@ -30,11 +35,11 @@ export function Hero() {
 
       <h1 className="text-[48px] font-bold leading-[1.45] text-white md:text-[56px]">
         <span className="block">Welcome to</span>
-        <span className="block">Narail Collectorate School</span>
+        <span className="block">{SITE.name}</span>
       </h1>
 
       <p className="text-body-lg leading-[1.45] text-white">
-        Committed to Excellence Since [Year]
+        {EXCELLENCE_LINE}
       </p>
 
       <p className="max-w-[680px] text-body leading-[1.45] text-white">

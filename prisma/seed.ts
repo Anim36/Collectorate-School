@@ -19,6 +19,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../src/generated/prisma/client";
+import { assertDestructiveDatabaseAllowed } from "../scripts/db-guard";
 import {
   DEFAULT_SECTION_NAME,
   SEED_CLASSES,
@@ -65,6 +66,10 @@ function createClient(): PrismaClient {
 }
 
 async function main(): Promise<void> {
+  // The demo seed writes demo accounts and demo passwords. It is for a local
+  // database only; the production seed is `prisma/seed-prod.ts`.
+  assertDestructiveDatabaseAllowed("The demo seed");
+
   const prisma = createClient();
 
   const adminLogin = requiredEnv("SEED_ADMIN_LOGIN");

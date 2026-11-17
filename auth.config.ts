@@ -26,6 +26,14 @@ export const authConfig = {
     maxAge: SESSION_MAX_AGE,
   },
   trustHost: true,
+  /**
+   * The session cookie is `httpOnly` and `sameSite=lax` by Auth.js default.
+   * The `Secure` flag is added only when the site is served over HTTPS, which
+   * is Auth.js's own rule; pinning it on in production makes the intent
+   * explicit and stops a production deploy on plain HTTP from issuing a
+   * cookie a network can read.
+   */
+  useSecureCookies: process.env.NODE_ENV === "production",
   providers: [],
   callbacks: {
     /**

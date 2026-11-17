@@ -3,6 +3,7 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 
 import { prisma } from "@/server/db";
+import { deleteQaAuditRows } from "./audit-cleanup";
 import {
   exportFeesCsv,
   feeSummary,
@@ -81,11 +82,9 @@ async function createActor(): Promise<string> {
  * it had.
  */
 async function cleanup(): Promise<void> {
-  await prisma.auditLog.deleteMany({ where: { actorId: ACTOR_ID } });
+  await deleteQaAuditRows(prisma, { actorIds: [ACTOR_ID] });
 
-  await prisma.auditLog.deleteMany({
-    where: { entityId: { startsWith: PREFIX } },
-  });
+  await deleteQaAuditRows(prisma, { entityPrefix: PREFIX });
 
   // The payments the checks recorded are found through the receipt they
   // hold, and the fees they settled are found through the slot.

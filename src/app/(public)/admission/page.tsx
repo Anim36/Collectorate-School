@@ -9,15 +9,18 @@ import { PageIntroduction } from "@/components/shared/page-introduction";
 import { PageSectionHeading } from "@/components/shared/page-section-heading";
 import {
   admissionFeeNote,
-  admissionFeeRows,
   admissionInfoCards,
   admissionSteps,
-} from "@/data/public-pages";
+} from "@/content/admission";
+import { listPublicFees } from "@/server/services/public-fees";
+
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "Admission",
   description:
     "A simple, transparent path to joining our school community — steps, documents, dates and fees.",
+  alternates: { canonical: "/admission" },
 };
 
 /**
@@ -28,8 +31,15 @@ export const metadata: Metadata = {
  *
  * The Figma frame spaces every block 32px apart and reserves 80px between
  * the section headings and the block they introduce.
+ *
+ * The journey, the documents and the dates are the school's own words, kept
+ * in `src/content/admission.ts`. The fee table is the one part that reads
+ * its rows from the database: the fee structure of every class the school
+ * teaches, for the current academic year, formatted in taka.
  */
-export default function AdmissionPage() {
+export default async function AdmissionPage() {
+  const feeRows = await listPublicFees();
+
   return (
     <>
       <PageIntroduction
@@ -63,7 +73,10 @@ export default function AdmissionPage() {
         <PageSectionHeading title="Fees at a glance" id="fees" className="mt-8" />
 
         <div className="mt-8 w-full">
-          <FeeTable rows={admissionFeeRows} caption="Admission fees for 2027" />
+          <FeeTable
+            rows={feeRows}
+            caption="Admission fees for every class, in the current academic year"
+          />
         </div>
 
         <p className="mt-8 text-caption leading-[1.45] text-muted">

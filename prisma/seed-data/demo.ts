@@ -10,14 +10,15 @@ import {
   admissionSteps,
   staffMembers,
   type StaffGroup,
+  type StaffMember,
 } from "@/data/public-pages";
 import { galleryAlbums } from "@/data/gallery";
 import { quickLinks, schoolStats } from "@/data/home";
-import { navItems } from "@/data/navigation";
+import { navItems } from "@/config/navigation";
 import { notices } from "@/data/notices";
 import { routineTimetable } from "@/data/routine";
 import { calendarEvents } from "@/data/calendar";
-import { teacherClasses, teacherRolls } from "@/data/teacher";
+import { seedDemoRolls } from "./demo-rolls";
 import { adminCalendarRows, adminNotices } from "@/data/admin-11b";
 import { adminAuditEvents, adminFeeStructure, adminPayments } from "@/data/admin-11c";
 
@@ -121,58 +122,6 @@ export interface DemoAccount {
 /* --------------------------------------------------------------- students --- */
 
 /**
- * The mock rolls of the classes the school has.
- *
- * The mock data splits every class into the sections A, B and C. The school
- * runs one group per class, so the students of every section are merged into
- * the one section the class has. The roll numbers are renumbered so they stay
- * unique inside the class.
- */
-function mergedRolls(): { classId: string; className: string; names: string[] }[] {
-  const classNames: Record<string, string> = {
-    "class-9": "Class 9",
-    "class-8": "Class 8",
-    "class-10": "Class 10",
-  };
-
-  const merged = new Map<string, string[]>();
-
-  for (const roll of teacherRolls) {
-    const list = merged.get(roll.classId) ?? [];
-
-    for (const student of roll.students) {
-      list.push(student.name);
-    }
-
-    merged.set(roll.classId, list);
-  }
-
-  // The mock data has no roll for Class 6 or Class 7, so a few students are
-  // added to them, taken from the roster the admin users table shows.
-  merged.set("class-6", [
-    "Arif Hasan",
-    "Tanvir Ahmed",
-    "Rumana Islam",
-    "Sabbir Rahman",
-    "Mehedi Hasan",
-  ]);
-
-  merged.set("class-7", [
-    "Jahangir Alam",
-    "Rupa Akter",
-    "Tania Sultana",
-    "Imran Kabir",
-    "Sohel Rana",
-  ]);
-
-  return [...merged.entries()].map(([classId, names]) => ({
-    classId,
-    className: classNames[classId] ?? classId.replace("class-", "Class "),
-    names,
-  }));
-}
-
-/**
  * The demo students, one row per student.
  *
  * The roll number runs from 1 inside the class, so the merged roll of a class
@@ -185,7 +134,7 @@ function buildStudents(): DemoStudent[] {
   const usedEmails = new Set<string>();
   let counter = 42;
 
-  for (const group of mergedRolls()) {
+  for (const group of seedDemoRolls()) {
     group.names.forEach((name, index) => {
       counter += 1;
 
@@ -379,7 +328,7 @@ function buildStaff() {
     "Support Staff": "SUPPORT",
   };
 
-  return staffMembers.map((member) => ({
+  return staffMembers.map((member: StaffMember) => ({
     id: `staff-${member.id}`,
     name: member.name,
     designation: member.designation,
@@ -403,8 +352,6 @@ export const SEED_DEMO_DATA = {
   staff: buildStaff(),
   subjectTeachers: SUBJECT_TEACHERS,
   classTeachers: CLASS_TEACHERS,
-  teacherClasses,
-  teacherRolls,
   notices,
   adminNotices,
   adminCalendarRows,

@@ -1,13 +1,13 @@
 "use client";
 
 import { PortalTable } from "@/components/shared/portal-table";
-import { countAttendance, type AttendanceSheet } from "@/data/teacher";
+import type { TeacherAttendanceHistoryRow } from "@/types/teacher";
 
 export interface TeacherAttendanceHistoryTableProps {
   /** Sheets rendered in the table. */
-  sheets: readonly AttendanceSheet[];
+  sheets: readonly TeacherAttendanceHistoryRow[];
   /** Fired when a reader opens a saved sheet. */
-  onOpenSheet: (sheet: AttendanceSheet) => void;
+  onOpenSheet: (sheet: TeacherAttendanceHistoryRow) => void;
   className?: string;
 }
 
@@ -22,6 +22,9 @@ export interface TeacherAttendanceHistoryTableProps {
  * - Mobile (375): each sheet becomes a stacked record of five labelled
  *   lines — "Date:  …", "Present:  …", "Absent:  …", "Late:  …" and
  *   "Status:  Saved" — 8px apart, so the record is 132px tall.
+ *
+ * The counts come from the database, so the numbers in the table are the
+ * numbers the school holds.
  */
 export function TeacherAttendanceHistoryTable({
   sheets,
@@ -29,36 +32,32 @@ export function TeacherAttendanceHistoryTable({
   className,
 }: TeacherAttendanceHistoryTableProps) {
   const columns = [
-    { header: "Date", cell: (sheet: AttendanceSheet) => sheet.dateLabel },
+    { header: "Date", cell: (sheet: TeacherAttendanceHistoryRow) => sheet.dateLabel },
     {
       header: "Present",
-      cell: (sheet: AttendanceSheet) => String(countAttendance(sheet.marks).present),
+      cell: (sheet: TeacherAttendanceHistoryRow) => String(sheet.present),
     },
     {
       header: "Absent",
-      cell: (sheet: AttendanceSheet) => String(countAttendance(sheet.marks).absent),
+      cell: (sheet: TeacherAttendanceHistoryRow) => String(sheet.absent),
     },
     {
       header: "Late",
-      cell: (sheet: AttendanceSheet) => String(countAttendance(sheet.marks).late),
+      cell: (sheet: TeacherAttendanceHistoryRow) => String(sheet.late),
     },
-    { header: "Status", cell: (sheet: AttendanceSheet) => sheet.status },
+    { header: "Status", cell: (sheet: TeacherAttendanceHistoryRow) => sheet.status },
   ];
 
-  const mobileRecords = sheets.map((sheet) => {
-    const counts = countAttendance(sheet.marks);
-
-    return {
-      id: sheet.id,
-      lines: [
-        { label: "Date", value: sheet.dateLabel },
-        { label: "Present", value: String(counts.present) },
-        { label: "Absent", value: String(counts.absent) },
-        { label: "Late", value: String(counts.late) },
-        { label: "Status", value: sheet.status },
-      ],
-    };
-  });
+  const mobileRecords = sheets.map((sheet) => ({
+    id: sheet.id,
+    lines: [
+      { label: "Date", value: sheet.dateLabel },
+      { label: "Present", value: String(sheet.present) },
+      { label: "Absent", value: String(sheet.absent) },
+      { label: "Late", value: String(sheet.late) },
+      { label: "Status", value: sheet.status },
+    ],
+  }));
 
   return (
     <PortalTable

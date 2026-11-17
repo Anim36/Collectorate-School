@@ -368,17 +368,33 @@ export async function deleteNotice(
 ): Promise<ServiceResult<{ id: string }>> {
   const notice = await prisma.notice.findUnique({
     where: { id: noticeId },
-    select: { id: true, title: true },
+    select: {
+      id: true,
+      title: true,
+      attachments: { select: { fileId: true } },
+    },
   });
 
   if (!notice) {
     return { ok: false, error: "That notice does not exist" };
   }
 
+  // The attachment rows go with the notice through the cascade, but the
+  // stored files do not: the cascade sets the file id to null and nothing
+  // would remove the bytes. The ids are read first, so the files can be taken
+  // off the disk after the notice is gone.
+  const fileIds = notice.attachments
+    .map((attachment) => attachment.fileId)
+    .filter((fileId): fileId is string => Boolean(fileId));
+
   try {
     await prisma.notice.delete({ where: { id: noticeId } });
   } catch {
     return { ok: false, error: "That notice could not be deleted" };
+  }
+
+  for (const fileId of fileIds) {
+    await removeStoredFile(actorId, fileId);
   }
 
   await writeAudit({

@@ -9,8 +9,8 @@ it was built from, at 1440, 768 and 375 pixels, in the light and the dark
 theme. The verification scripts that do this live in `scripts/` and are
 documented in [`scripts/README.md`](scripts/README.md).
 
-The admin portal and the student portal read and write the school in the
-database; the public pages and the teacher portal still run on mock data.
+The admin portal, the student portal and the teacher portal read and write the
+school in the database; the public pages still run on mock data.
 [`docs/BACKEND_HANDOFF.md`](docs/BACKEND_HANDOFF.md) names the table each
 mock file becomes and every endpoint the in-memory changes will need.
 
@@ -54,6 +54,12 @@ The dev server runs on <http://localhost:3000>.
 | `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP. Needs the server on port 3111. |
 | `npm run qa:admin-11c` | The admin fees, audit log and dashboard services. |
 | `npm run qa:student-b5` | The student portal: every student route with a real session, the isolation of one student's data from another's and the payment race. |
+| `npm run qa:teacher-b6` | The teacher portal: every teacher route with a real session, the isolation of one teacher's classes from another's and the read-only rule of the dashboard and the notice board. |
+| `npm run qa:public` | Public pages database integrity, server-side caching, and sanitization checks. |
+| `npm run qa:audit-append-only` | B7 security check: asserts PostgreSQL append-only triggers refuse UPDATE and DELETE on audit_log. |
+| `npm run qa:auth-matrix` | B7 authorization matrix: complete route coverage check and cross-tenant IDOR defense. |
+| `npm run seed:prod` | Production seed: creates only the admin user and class/subject structure without demo data. |
+| `npm run admin:reset-password -- --confirm` | Safely resets the admin password via environment variables or CLI prompt with audit tracking. |
 
 ### Environment
 

@@ -1,21 +1,12 @@
 import Link from "next/link";
 import { Facebook, MapPin, Youtube } from "lucide-react";
 
-import type { NavChildItem } from "@/data/navigation";
-
-const exploreLinks: readonly NavChildItem[] = [
-  { label: "About our school", href: "/about" },
-  { label: "Admission", href: "/admission" },
-  { label: "Teachers & Staff", href: "/teachers" },
-  { label: "Gallery", href: "/gallery" },
-];
-
-const resourceLinks: readonly NavChildItem[] = [
-  { label: "Notice board", href: "/notice" },
-  { label: "Academic Calendar", href: "/calendar" },
-  { label: "Class Routine", href: "/routine" },
-  { label: "Student Portal", href: "/student" },
-];
+import { SITE } from "@/config/site";
+import {
+  footerExploreLinks,
+  footerResourceLinks,
+  type NavChildItem,
+} from "@/config/navigation";
 
 function FooterColumn({
   title,
@@ -63,26 +54,26 @@ export function Footer() {
         <div className="flex flex-col gap-8 md:flex-row md:flex-wrap">
           <div className="flex w-full flex-col items-start gap-3 text-white md:w-[152px] xl:w-[320px]">
             <p className="text-title font-bold leading-[1.45] md:text-[16px] xl:text-title">
-              Narail Collectorate School
+              {SITE.name}
             </p>
             <p className="text-body leading-[1.45] text-white">
-              Learning today. Leading tomorrow.
+              {SITE.tagline}
             </p>
             <address className="not-italic">
-              <p className="text-caption leading-[1.45]">Dhanmondi, Dhaka 1209</p>
-              <p className="text-caption leading-[1.45]">+880 2 5500 1200</p>
-              <p className="text-caption leading-[1.45]">info@school.edu.bd</p>
+              <p className="text-caption leading-[1.45]">{SITE.addressLine}</p>
+              <p className="text-caption leading-[1.45]">{SITE.phone}</p>
+              <p className="text-caption leading-[1.45]">{SITE.email}</p>
             </address>
             <div className="flex h-[19px] items-center gap-4">
               <Link
-                href="https://facebook.com"
+                href={SITE.social.facebook}
                 aria-label="Facebook"
                 className="transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
                 <Facebook aria-hidden className="size-4" />
               </Link>
               <Link
-                href="https://youtube.com"
+                href={SITE.social.youtube}
                 aria-label="YouTube"
                 className="transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
@@ -91,8 +82,8 @@ export function Footer() {
             </div>
           </div>
 
-          <FooterColumn title="Explore" links={exploreLinks} />
-          <FooterColumn title="Resources" links={resourceLinks} />
+          <FooterColumn title="Explore" links={footerExploreLinks} />
+          <FooterColumn title="Resources" links={footerResourceLinks} />
 
           <div className="flex w-full flex-col items-start gap-3 rounded-[12px] bg-tint p-6 md:w-[152px] xl:w-[272px]">
             <MapPin aria-hidden className="size-6 text-primary" />
@@ -100,7 +91,7 @@ export function Footer() {
               Find our campus
             </h3>
             <p className="text-caption leading-[1.45] text-muted">
-              Dhanmondi, Dhaka
+              {SITE.addressShort}
               <br />
               Map location placeholder
             </p>
@@ -108,8 +99,8 @@ export function Footer() {
         </div>
 
         <p className="text-caption leading-[1.45] text-white">
-          © 2026 Narail Collectorate School. All rights reserved. • Privacy policy •
-          Accessibility
+          © {new Date().getFullYear()} {SITE.name}. All rights reserved. • Privacy
+          policy • Accessibility
         </p>
       </div>
     </footer>

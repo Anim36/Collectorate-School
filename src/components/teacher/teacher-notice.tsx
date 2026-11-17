@@ -4,14 +4,16 @@ import * as React from "react";
 
 import { FilterField } from "@/components/shared/filter-field";
 import { PortalTable } from "@/components/shared/portal-table";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { useSetPortalSection } from "@/components/layout/portal-section-context";
 import { TeacherPageHeader } from "@/components/teacher/teacher-page-header";
-import { teacherGreeting } from "@/data/teacher";
-import {
-  filterTeacherNoticeRows,
-  teacherNoticeAudiences,
-  type TeacherNoticeRow,
-} from "@/data/teacher-notices";
+import { useToast } from "@/hooks/use-toast";
+import { listTeacherNoticesAction } from "@/app/teacher/actions";
+import type {
+  TeacherNoticeAudience,
+  TeacherNoticeList,
+  TeacherNoticeRow,
+} from "@/types/teacher";
 
 /**
  * The teacher notice board.
@@ -27,16 +29,57 @@ import {
  *
  * The audience filter is the teacher's own addition: the teacher sees the
  * notices addressed to the teachers, to the students and to everyone.
+ *
+ * The notices come from the database and the filter runs on the server, so
+ * the count under the table is the number of notices that really match.
  */
-export function TeacherNotice() {
+export function TeacherNotice({ initial }: { initial: TeacherNoticeList }) {
+  const { toast } = useToast();
+
   // The top bar names the section, as Figma draws it.
   useSetPortalSection("Notice");
 
-  const [audience, setAudience] = React.useState<string>(
-    teacherNoticeAudiences[0],
+  const [audience, setAudience] = React.useState<TeacherNoticeAudience>(
+    initial.audience,
+  );
+  const [rows, setRows] = React.useState<readonly TeacherNoticeRow[]>(
+    initial.rows,
+  );
+  const [total, setTotal] = React.useState(initial.total);
+  const [page, setPage] = React.useState(initial.page);
+  const [pageCount, setPageCount] = React.useState(initial.pageCount);
+
+  /**
+   * Reads the board from the server with the audience that is set.
+   */
+  const load = React.useCallback(
+    async (nextAudience: TeacherNoticeAudience, nextPage: number) => {
+      const result = await listTeacherNoticesAction({
+        audience: nextAudience,
+        page: nextPage,
+      });
+
+      if (!result.ok) {
+        toast({
+          title: "Could not load the notices",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setRows(result.data.rows);
+      setTotal(result.data.total);
+      setPage(result.data.page);
+      setPageCount(result.data.pageCount);
+    },
+    [toast],
   );
 
-  const visibleRows = filterTeacherNoticeRows(audience);
+  // The board is read again when the filter changes.
+  React.useEffect(() => {
+    void load(audience, 0);
+  }, [audience, load]);
 
   const columns = [
     { header: "Date", cell: (row: TeacherNoticeRow) => row.date },
@@ -44,7 +87,7 @@ export function TeacherNotice() {
     { header: "Notice", cell: (row: TeacherNoticeRow) => row.notice },
   ];
 
-  const mobileRecords = visibleRows.map((row) => ({
+  const mobileRecords = rows.map((row) => ({
     id: row.id,
     lines: [
       { label: "Date", value: row.date },
@@ -53,16 +96,20 @@ export function TeacherNotice() {
     ],
   }));
 
+  // The page is clamped rather than reset in an effect, so a filter change
+  // never renders a frame of the previous page.
+  const currentPage = Math.min(page, Math.max(1, pageCount) - 1);
+
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 md:px-8 md:py-8">
-      <TeacherPageHeader title="Notice" description={teacherGreeting.context} />
+      <TeacherPageHeader title="Notice" description={initial.context} />
 
       <div className="flex w-full flex-col items-start">
         <FilterField
           label="Audience"
-          options={teacherNoticeAudiences}
+          options={initial.audiences}
           value={audience}
-          onValueChange={setAudience}
+          onValueChange={(value) => setAudience(value as TeacherNoticeAudience)}
           className="md:w-[360px]"
         />
       </div>
@@ -70,9 +117,20 @@ export function TeacherNotice() {
       <PortalTable
         caption="Notices for teachers"
         columns={columns}
-        rows={visibleRows}
+        rows={rows}
         mobileRecords={mobileRecords}
         mobileRecordSize="uniform"
+        footer={
+          <TablePagination
+            totalRecords={total}
+            page={currentPage}
+            pageSize={initial.pageSize}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void load(audience, nextPage);
+            }}
+          />
+        }
       />
     </div>
   );

@@ -2,17 +2,18 @@ import type { Metadata } from "next";
 
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
+import { SITE, SITE_DESCRIPTION } from "@/config/site";
 import { hindSiliguri, inter } from "./fonts";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE.url),
   title: {
-    default: "Narail Collectorate School · Narail Collectorate School",
-    template: "%s · Narail Collectorate School",
+    default: SITE.name,
+    template: `%s · ${SITE.name}`,
   },
-  description:
-    "Learning today. Leading tomorrow. A digital campus for students, teachers and administrators.",
+  description: SITE_DESCRIPTION,
 };
 
 export default function RootLayout({

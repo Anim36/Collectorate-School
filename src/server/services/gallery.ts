@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db";
+import { MAX_LIST_ROWS } from "@/server/limits";
 import {
   listAlbumsSchema,
   saveAlbumSchema,
@@ -92,6 +93,7 @@ export async function listPendingPhotos(): Promise<
   const photos = await prisma.galleryPhoto.findMany({
     where: { status: "PENDING" },
     orderBy: { createdAt: "asc" },
+    take: MAX_LIST_ROWS,
     select: {
       id: true,
       name: true,

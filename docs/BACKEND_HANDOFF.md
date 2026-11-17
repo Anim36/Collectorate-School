@@ -1,10 +1,10 @@
 # Backend handoff
 
-The admin portal, the sign-in and the student portal already run on the
-database; the public pages and the teacher portal still run on the mock data
-in `src/data`. This document names the table each mock file becomes, and every
-place where a change lives only in the browser's memory, together with the API
-endpoint it will need.
+The admin portal, the sign-in, the student portal and the teacher portal already
+run on the database; the public pages still run on the mock data in `src/data`.
+This document names the table each mock file becomes, and every place where a
+change lives only in the browser's memory, together with the API endpoint it
+will need.
 
 The endpoints below use the REST shape the rest of the app already implies:
 
@@ -26,7 +26,7 @@ when the backend arrives.
 | Mock file | Backend table | Notes |
 | --- | --- | --- |
 | `src/data/admin.ts` | `users`, `classes`, `class_subjects` | `adminUsers` → `users`; `adminClasses` / `adminClassRows` → `classes`; `adminSubjectAllocations` → `class_subjects`. `adminDepartments`, `adminSubjects` and `adminTeachers` are reference lists. |
-| `src/data/admin-11b.ts` | `notices`, `notice_attachments`, `gallery_albums`, `gallery_photos`, `routines`, `routine_periods`, `calendar_events` | `adminNotices` → `notices`; `adminAlbums` → `gallery_albums`; `adminPhotoReviews` → `gallery_photos`; `adminRoutine` → `routines` + `routine_periods`; `adminCalendarRows` → `calendar_events`. |
+| `src/data/admin-11b.ts` | `notices`, `notice_attachments`, `gallery_albums`, `gallery_photos`, `routines`, `routine_periods`, `calendar_events` | `adminNotices` → `notices`; `adminAlbums` → `gallery_albums`; `adminRoutine` → `routines` + `routine_periods`; `adminCalendarRows` → `calendar_events`. The photo review queue is gone from the mock: it was built from the teacher uploads, and both the queue and the uploads are rows now. |
 | `src/data/admin-11c.ts` | `payments`, `receipts`, `fee_structure`, `audit_log` | `adminPayments` → `payments`; `adminFeeStructure` → `fee_structure`; `adminAuditEvents` → `audit_log`. The receipt prefix and the invoice prefix are worked out on the server, not stored as columns. |
 | `src/data/calendar.ts` | `calendar_events` | The public calendar reads the same `calendar_events` table as the admin calendar, filtered by `audience`. |
 | `src/data/components.ts` | — | Demo fixtures for the design-system page only. Not a table; keep it in the app or drop it with the page. |
@@ -40,10 +40,10 @@ when the backend arrives.
 | `src/data/public-pages.ts` | `admission_steps`, `fee_structure`, `staff`, `about_content` | `admissionSteps` → `admission_steps`; `admissionFeeRows` → `fee_structure`; `staffMembers` → `staff`; `aboutTimeline` and the `about*` copy → `about_content`. |
 | `src/data/routine.ts` | `routines`, `routine_periods`, `classes` | The public routine reads the same `routines` table as the admin routine. |
 | `src/data/student.ts` | `students`, `attendance`, `exam_results`, `fees`, `payments`, `receipts` | Gone. The student portal reads the database now (`src/server/services/student-*.ts`). |
-| `src/data/teacher-gallery.ts` | `gallery_photos`, `gallery_albums` | `teacherUploads` → `gallery_photos` with `status = 'awaiting_approval'`; `teacherGalleryAlbums` → `gallery_albums`. |
-| `src/data/teacher-notices.ts` | `notices` | The teacher notice board reads the same `notices` table, filtered by `audience`. |
-| `src/data/teacher-results.ts` | `exam_results`, `exams`, `result_sheets` | `teacherExams` → `exams`; `teacherResultSheets` → `result_sheets`; the marks inside a sheet → `exam_results`. |
-| `src/data/teacher.ts` | `teachers`, `classes`, `students`, `attendance` | `teacherProfile` → `teachers`; `teacherClasses` → `classes`; `teacherRolls` → `students`; `teacherAttendanceSheets` → `attendance`. |
+| `src/data/teacher-gallery.ts` | `gallery_photos`, `gallery_albums` | Gone. The teacher gallery reads the database now (`src/server/services/teacher-gallery.ts`). |
+| `src/data/teacher-notices.ts` | `notices` | Gone. The teacher notice board reads the database now (`src/server/services/teacher-content.ts`). |
+| `src/data/teacher-results.ts` | `exam_results`, `exams`, `result_sheets` | Gone. The teacher results read the database now (`src/server/services/teacher-results.ts`). |
+| `src/data/teacher.ts` | `teachers`, `classes`, `students`, `attendance` | Gone. The teacher portal reads the database now (`src/server/services/teacher-*.ts`). The rolls the seed writes live in `prisma/seed-data/demo-rolls.ts`. |
 
 ### The tables the mock data implies
 These tables exist today. The schema is `prisma/schema.prisma`; the column
@@ -118,22 +118,36 @@ more: everything it does is on the database.
 
 ### 2.1 Attendance save — `src/components/teacher/teacher-attendance.tsx`
 
-The teacher marks present / absent / late for a class, section and date. The
-marks live in `marks` state, and `save()` only sets the timestamp and raises a
-toast. The sheet is re-read from `teacherAttendanceSheets` when the class,
-section or date changes, so an unsaved sheet is lost on navigation.
+The attendance sheet is on the database now
+(`src/server/services/teacher-attendance.ts`). The teacher marks present /
+absent / late for a class and a day, and `save()` writes the sheet and its
+marks in one transaction, so a sheet never exists without its marks. The
+counters the page shows after a save are counted again on the server.
+
+The rule is part of the query: only the classes the teacher is the class
+teacher of can be marked, and a day that has not come yet is refused. A
+teacher who changes the request cannot mark a class that is not theirs.
 
 | Need | Endpoint |
 | --- | --- |
-| Read a sheet | `GET /api/attendance?class_id=class-9&section=A&date=2026-11-04` |
-| Save the marks | `PUT /api/attendance` with the class, section, date and the `{ student_id: status }` map |
+| Read a sheet | `GET /api/attendance?class_id=class-9&date=2026-11-04` |
+| Save the marks | `PUT /api/attendance` with the class, the date and the `{ student_id: status }` map |
 | Who marked it | `marked_by` on the attendance row, from the session |
 
 ### 2.2 Result publish — `src/components/teacher/teacher-results.tsx`
 
-The teacher types the marks of a subject, saves a draft and publishes the
-sheet. `marks`, `status` and `savedAt` are page state, and the published sheet
-is not visible to the students afterwards.
+The result sheet is on the database now
+(`src/server/services/teacher-results.ts`). The teacher types the marks of a
+subject, saves a draft and publishes the sheet. The marks, the status and the
+save time are rows, and the sheet and every result of it are written in one
+transaction, so a student never sees a published sheet with a draft result in
+it.
+
+The grade and the grade point are worked out by the one function in
+`src/server/services/grading.ts`, so the table shows the numbers the sheet
+stores and the browser never names a grade of its own. Only the classes and
+the subjects the teacher is allocated to can be written, and a published sheet
+is read-only until the teacher re-opens it.
 
 | Need | Endpoint |
 | --- | --- |
@@ -179,8 +193,13 @@ form of that number and never the full one.
 
 ### 2.4 Gallery approval — `src/components/teacher/teacher-gallery.tsx`
 
-The teacher still stages the picked files in page state, so a staged photo
-never reaches the queue. The admin side of it is on the database now
+The teacher gallery is on the database now
+(`src/server/services/teacher-gallery.ts`): the picked photographs are written
+as `PENDING`, so they wait for the admin before they appear in the album. The
+files go through the storage layer, so the type is worked out from the bytes
+of the file and not from the name the browser sent.
+
+The admin side of it is on the database as well
 (`src/server/services/gallery.ts`): the queue is a real list of the photographs
 with `status = 'PENDING'`, and approving or rejecting one writes the row.
 
@@ -191,12 +210,10 @@ with `status = 'PENDING'`, and approving or rejecting one writes the row.
 
 ### 2.5 The other in-memory edits
 
-These are the same kind of change: they work, they raise a toast, and they do
-not survive a reload.
-
-| Where | What it changes | Endpoint |
-| --- | --- | --- |
-| `src/components/teacher/teacher-gallery.tsx` | Stages an upload and lists the album preview | `POST /api/gallery_photos`, `GET /api/gallery_albums` |
+There are none left in the teacher portal: the dashboard, the attendance sheet
+and its history, the results, the notice board and the gallery all read and
+write the database through `src/app/teacher/actions.ts` and the services
+behind it.
 
 Everything the admin portal does — the accounts, the classes, the notices, the
 gallery, the routine, the calendar, the fees, the audit log and the dashboard —
@@ -218,14 +235,21 @@ and the gallery all read the student's own rows through
 `src/server/services/student-*.ts`. Every read is read-only, so no GET page
 writes anything.
 
-What is left is the public pages and the teacher portal.
+The teacher portal is on the database as well: the dashboard, the attendance
+sheet and its history, the results, the notice board and the gallery all read
+the teacher's own rows through `src/server/services/teacher-*.ts`. Every read
+is read-only, so no GET page writes anything, and every read carries the
+teacher in its own query, so a teacher sees only their own classes and
+subjects.
+
+What is left is the public pages.
 
 1. **Read only.** `students`, `teachers`, `attendance`, `exam_results`,
    `notices`, `gallery_albums`, `gallery_photos`, `calendar_events`,
-   `fee_structure`. Every page replaces its mock import with a fetch and
-   nothing else changes.
-2. **Writes.** The in-memory edits above, one table at a time. The fee payment
-   is the one to do first, because the receipt and the fees table have to agree
-   across two pages — the admin side of it already does.
-3. **Uploads.** The teacher gallery still stages its files in page state, so it
+   `fee_structure`. Every public page replaces its mock import with a read of
+   the table behind it, and nothing else changes.
+2. **Writes.** There are none left: every write the school makes — the
+   accounts, the attendance, the marks, the notices, the fees and the
+   photographs — is on the database.
+3. **Uploads.** The public gallery still stages its files in page state, so it
    needs a file endpoint of its own once the album tables are read.

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { utilityLinks } from "@/data/navigation";
+import { SITE } from "@/config/site";
+import { utilityLinks } from "@/config/navigation";
 
 /**
  * Utility bar above the navbar.
@@ -17,7 +18,7 @@ export function TopBar() {
     <div className="bg-navy px-6 py-3 text-caption font-medium leading-[17px] text-white md:px-8 md:leading-[19px] xl:px-20">
       <div className="flex items-start gap-4 md:gap-8">
         <p className="hidden whitespace-nowrap md:block">
-          Dhaka, Bangladesh&nbsp; • &nbsp;EST. [Year]
+          Dhaka, Bangladesh&nbsp; • &nbsp;EST. {SITE.establishedYear}
         </p>
 
         {/* Mobile: "Apply Now" plus the collapsed portal run. */}

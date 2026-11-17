@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { deleteQaAuditRows } from "./audit-cleanup";
 import { deleteFile } from "@/server/storage";
 
 /**
@@ -227,10 +228,8 @@ async function cleanup(): Promise<void> {
 
   const userIds = users.map((user) => user.id);
 
-  await prisma.auditLog.deleteMany({ where: { actorId: { in: userIds } } });
-  await prisma.auditLog.deleteMany({
-    where: { entityId: { startsWith: PREFIX } },
-  });
+  await deleteQaAuditRows(prisma, { actorIds: userIds });
+  await deleteQaAuditRows(prisma, { entityPrefix: PREFIX });
   await prisma.student.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.teacher.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });

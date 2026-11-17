@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { SITE } from "@/config/site";
 
 /**
  * Compact header for the auth screens.
@@ -19,7 +20,7 @@ export function AuthHeader() {
         href="/"
         className="text-[20px] font-bold leading-[1.45] text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        Narail Collectorate School
+        {SITE.name}
       </Link>
 
       <div className="flex shrink-0 items-center gap-2">

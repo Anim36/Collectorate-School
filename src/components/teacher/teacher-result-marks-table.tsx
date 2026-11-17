@@ -3,12 +3,7 @@
 import { AlertTriangle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import {
-  gradeForMark,
-  gpaForMark,
-  type TeacherMarkError,
-  type TeacherResultRow,
-} from "@/data/teacher-results";
+import type { TeacherMarkError, TeacherResultRow } from "@/types/teacher";
 
 export interface TeacherResultMarksTableProps {
   /** Rows rendered in the table. */
@@ -46,6 +41,10 @@ export interface TeacherResultMarksTableProps {
  * The mark field is a 38px bordered box on desktop and tablet and a 46px box
  * on mobile, where it also carries the "Marks / 100" label. Figma draws only
  * the grade, so the GPA the portal needs is a muted line under it.
+ *
+ * The grade and the GPA of a row are the ones the server worked out, so the
+ * table shows the numbers the sheet stores and not a second calculation in
+ * the browser.
  */
 export function TeacherResultMarksTable({
   rows,
@@ -148,11 +147,11 @@ export function TeacherResultMarksTable({
                   {error ? (
                     <span className="text-danger">Invalid</span>
                   ) : (
-                    gradeForMark(row.marks)
+                    row.grade
                   )}
                   {error ? null : (
                     <span className="mt-px block text-micro leading-4 text-muted">
-                      GPA {gpaForMark(row.marks)}
+                      {row.gpa ? `GPA ${row.gpa}` : ""}
                     </span>
                   )}
                 </td>
@@ -183,7 +182,7 @@ export function TeacherResultMarksTable({
                 {error ? (
                   <span className="text-danger">Invalid</span>
                 ) : (
-                  gradeForMark(row.marks)
+                  row.grade
                 )}
               </p>
 
@@ -214,7 +213,7 @@ export function TeacherResultMarksTable({
                   />
                 ) : (
                   <span className="shrink-0 text-micro leading-4 text-muted">
-                    GPA {gpaForMark(row.marks)}
+                    {row.gpa ? `GPA ${row.gpa}` : ""}
                   </span>
                 )}
               </div>

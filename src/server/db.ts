@@ -1,6 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { validateEnv } from "@/server/env";
 
 /**
  * The Prisma client every server-side module uses.
@@ -20,13 +21,10 @@ const globalForPrisma = globalThis as unknown as {
  * by the time this runs.
  */
 function connectionString(): string {
-  const value = process.env.DATABASE_URL;
-
-  if (!value) {
-    throw new Error(
-      "DATABASE_URL is not set. Copy .env.example to .env and fill it in.",
-    );
-  }
+  // The whole environment is checked, not only DATABASE_URL, so a missing
+  // AUTH_SECRET in production stops the first query rather than the first
+  // sign-in. The error names the variables and never prints a value.
+  const value = validateEnv().DATABASE_URL;
 
   return value;
 }

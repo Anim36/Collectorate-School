@@ -6,6 +6,9 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { deleteFile } from "@/server/storage";
 import { SEED_DEMO_DATA } from "../../prisma/seed-data/demo";
 import { poisha } from "../../prisma/seed-data/helpers";
+import { restoreSeededClassRows } from "./seed-teacher-rows";
+import { deleteQaAuditRows } from "./audit-cleanup";
+import type { AdminFeeStructureRow } from "@/data/admin-11c";
 
 /**
  * Puts the database back the way the seed describes it.
@@ -94,9 +97,7 @@ async function main(): Promise<void> {
   });
 
   // The audit rows a check wrote are removed; the seeded ones are kept.
-  await prisma.auditLog.deleteMany({
-    where: { NOT: { id: { startsWith: "audit-" } } },
-  });
+  await deleteQaAuditRows(prisma, { keepSeeded: true });
 
   // The payments a check recorded are taken off again, and the fee lines they
   // settled are put back to due. A check that paid a line by hand must not
@@ -152,10 +153,10 @@ async function main(): Promise<void> {
     const band =
       structure.class.sortOrder >= 10
         ? SEED_DEMO_DATA.adminFeeStructure.find(
-            (row) => row.classBand === "9–10",
+            (row: AdminFeeStructureRow) => row.classBand === "9–10",
           )
         : SEED_DEMO_DATA.adminFeeStructure.find(
-            (row) => row.classBand === "6–8",
+            (row: AdminFeeStructureRow) => row.classBand === "6–8",
           );
 
     if (!band) continue;
@@ -168,6 +169,17 @@ async function main(): Promise<void> {
         activitiesPoisha: poisha(band.activities),
       },
     });
+  }
+
+  // The allocations and the class teachers a check took over are put back the
+  // way the seed describes them. A check that gives its own teacher a class
+  // and a subject takes them away from the teachers the seed gives them.
+  const classes = await prisma.class.findMany({
+    select: { id: true },
+  });
+
+  for (const schoolClass of classes) {
+    await restoreSeededClassRows(prisma, schoolClass.id);
   }
 
   console.log(

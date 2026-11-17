@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { deleteQaAuditRows } from "./audit-cleanup";
 import {
   connectBrowser,
   sleep,
@@ -276,7 +277,7 @@ async function createTestAccount(): Promise<void> {
 }
 
 async function removeTestAccount(): Promise<void> {
-  await prisma.auditLog.deleteMany({ where: { entityId: LOGIN_ID } });
+  await deleteQaAuditRows(prisma, { entityIds: [LOGIN_ID] });
   await prisma.user.deleteMany({ where: { loginId: LOGIN_ID } });
 }
 
@@ -315,7 +316,7 @@ async function createAdminAccount(): Promise<void> {
  * Removes the admin account and the rows it left behind.
  */
 async function removeAdminAccount(): Promise<void> {
-  await prisma.auditLog.deleteMany({ where: { entityId: ADMIN_LOGIN_ID } });
+  await deleteQaAuditRows(prisma, { entityIds: [ADMIN_LOGIN_ID] });
   await prisma.user.deleteMany({ where: { loginId: ADMIN_LOGIN_ID } });
 }
 

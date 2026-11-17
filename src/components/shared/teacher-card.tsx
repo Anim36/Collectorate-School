@@ -15,8 +15,14 @@ export interface TeacherCardProps {
   name: string;
   /** Role and subject line. */
   designation: string;
-  /** Contact address. */
-  email: string;
+  /**
+   * Contact address, when the member has one the school publishes.
+   *
+   * There is no public-contact flag yet, so the directory passes none: the
+   * line disappears instead of showing an address the school has not chosen
+   * to publish.
+   */
+  email?: string;
   className?: string;
 }
 
@@ -54,9 +60,11 @@ export function TeacherCard({
         {name}
       </h3>
       <p className="text-body leading-[1.45] text-muted">{designation}</p>
-      <p className="text-caption leading-[1.45] text-primary">
-        <a href={`mailto:${email}`}>{email}</a>
-      </p>
+      {email ? (
+        <p className="text-caption leading-[1.45] text-primary">
+          <a href={`mailto:${email}`}>{email}</a>
+        </p>
+      ) : null}
     </article>
   );
 }

@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
 import { listPendingPayments } from "@/server/services/fees";
+import { deleteQaAuditRows } from "./audit-cleanup";
 
 /**
  * The acceptance checks of step B5, over HTTP.
@@ -238,7 +239,7 @@ async function removeCheckStudent(): Promise<void> {
     await prisma.fee.deleteMany({ where: { studentId: student.id } });
     await prisma.examResult.deleteMany({ where: { studentId: student.id } });
     await prisma.attendance.deleteMany({ where: { studentId: student.id } });
-    await prisma.auditLog.deleteMany({ where: { actorId: `user-${CHECK_LOGIN_ID}` } });
+    await deleteQaAuditRows(prisma, { actorIds: [`user-${CHECK_LOGIN_ID}`] });
     await prisma.student.delete({ where: { id: student.id } });
   }
 

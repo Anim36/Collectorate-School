@@ -4,7 +4,7 @@ import { PortalBottomNav } from "@/components/layout/portal-bottom-nav";
 import { PortalSectionProvider } from "@/components/layout/portal-section-context";
 import { PortalSidebar } from "@/components/layout/portal-sidebar";
 import { PortalTopBar } from "@/components/layout/portal-top-bar";
-import type { PortalNavConfig } from "@/data/portal-navigation";
+import type { PortalNavConfig } from "@/types/portal";
 
 export interface PortalLayoutProps {
   /** Navigation configuration for the signed-in role. */

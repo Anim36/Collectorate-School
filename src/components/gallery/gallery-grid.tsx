@@ -4,11 +4,7 @@ import Link from "next/link";
 import * as React from "react";
 
 import { GalleryCard } from "@/components/shared/gallery-card";
-import {
-  galleryAlbums,
-  galleryTabs,
-  type GalleryTabValue,
-} from "@/data/gallery";
+import type { PublicGalleryAlbum } from "@/types/public";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,16 +12,30 @@ import { cn } from "@/lib/utils";
  * Figma "Public / Gallery" (light 2:1996 / 2:2071 / 2:2140 and the matching
  * dark frames): a row of tabs followed by a two-column album grid on tablet
  * and desktop, and a single column on mobile.
+ *
+ * The albums come from the server, filtered to the public albums that hold
+ * approved photographs. The tabs are the categories those albums really
+ * carry, so the row never offers a tab with nothing behind it.
  */
-export function GalleryGrid() {
-  const [tab, setTab] = React.useState<GalleryTabValue>(galleryTabs[0]);
+export function GalleryGrid({
+  albums,
+}: {
+  albums: readonly PublicGalleryAlbum[];
+}) {
+  const tabs = React.useMemo(() => {
+    const categories = [...new Set(albums.map((album) => album.category))];
+
+    return ["All albums", ...categories];
+  }, [albums]);
+
+  const [tab, setTab] = React.useState<string>("All albums");
 
   const visibleAlbums = React.useMemo(
     () =>
-      tab === galleryTabs[0]
-        ? galleryAlbums
-        : galleryAlbums.filter((album) => album.category === tab),
-    [tab],
+      tab === "All albums"
+        ? albums
+        : albums.filter((album) => album.category === tab),
+    [tab, albums],
   );
 
   return (
@@ -35,7 +45,7 @@ export function GalleryGrid() {
         aria-label="Gallery categories"
         className="flex items-start gap-4 md:gap-8"
       >
-        {galleryTabs.map((option) => {
+        {tabs.map((option) => {
           const isActive = option === tab;
           return (
             <button

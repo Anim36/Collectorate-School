@@ -141,12 +141,14 @@ so they can be run again without changing the school.
 | `npm run qa:admin-11b-http` | The admin server actions and the file route over HTTP: who may run them and who may see a file. |
 | `npm run qa:admin-11c` | The admin fees, audit log and dashboard services: the filters, the pagination, the issue of a billing slot, the payment, the receipt and the export. |
 | `npm run qa:student-b5` | The student portal: every student route over HTTP with a real session, the isolation of one student's data from another's, the read-only rule of the dashboard and the payment race — two submissions of the same fee line at the same moment leave exactly one waiting payment behind. |
+| `npm run qa:teacher-b6` | The teacher portal: every teacher route over HTTP with a real session, the isolation of one teacher's classes and subjects from another's, the read-only rule of the dashboard and the notice board, and the rule that a day that has not come yet cannot be marked. |
 
 `npm run qa:auth-password` and `npm run qa:auth-logout` drive the debug
 browser, so it has to be up. `npm run qa:admin-roles` and
 `npm run qa:admin-11b-http` talk to the server on port 3111, so a build has to
-be running there. `npm run qa:student-b5` talks to the server on port 3111 as
-well, and it needs the seeded database, because the checks write to it.
+be running there. `npm run qa:student-b5` and `npm run qa:teacher-b6` talk to
+the server on port 3111 as well, and they need the seeded database, because the
+checks write to it.
 
 The student checks make a throwaway student of their own, so they can be run
 again at any time. The same script puts the student in place or takes it away
@@ -155,6 +157,22 @@ on its own:
 ```powershell
 npx tsx scripts/qa/check-student-b5.ts --setup
 npx tsx scripts/qa/check-student-b5.ts --teardown
+```
+
+The teacher checks make a throwaway teacher of their own, and they work the
+same way:
+
+```powershell
+npx tsx scripts/qa/check-teacher-b6.ts --setup
+npx tsx scripts/qa/check-teacher-b6.ts --teardown
+```
+
+The QA teacher of the portal comparisons takes over the class teacher of Class
+9 and the allocation of Science in it, so that the pages have something to show.
+The teardown puts those rows back the way the seed describes them:
+
+```powershell
+npx tsx scripts/qa/qa-portal-accounts.ts --teardown
 ```
 
 The checks write to the real database, so they clean up after themselves. The

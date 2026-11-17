@@ -3,22 +3,18 @@ import { notFound } from "next/navigation";
 
 import { AlbumGrid } from "@/components/gallery/album-grid";
 import { PageIntroduction } from "@/components/shared/page-introduction";
-import { findGalleryAlbum, galleryAlbums } from "@/data/gallery";
+import { getPublicGalleryAlbum } from "@/server/services/public-gallery";
 
 interface AlbumDetailPageProps {
   /** Route parameter carrying the album identifier. */
   params: Promise<{ albumId: string }>;
 }
 
-export function generateStaticParams() {
-  return galleryAlbums.map((album) => ({ albumId: album.id }));
-}
-
 export async function generateMetadata({
   params,
 }: AlbumDetailPageProps): Promise<Metadata> {
   const { albumId } = await params;
-  const album = findGalleryAlbum(albumId);
+  const album = await getPublicGalleryAlbum(albumId);
 
   if (!album) {
     return { title: "Album not found" };
@@ -27,6 +23,7 @@ export async function generateMetadata({
   return {
     title: album.title,
     description: album.description,
+    alternates: { canonical: `/gallery/${album.id}` },
   };
 }
 
@@ -35,12 +32,16 @@ export async function generateMetadata({
  * Figma "Public / Album detail" (light 2:2207 / 2:2269 / 2:2325 and the
  * matching dark frames): the page introduction followed by the photograph
  * grid; opening a photograph shows the lightbox viewer.
+ *
+ * The album is read from the database. An album that is not public — or one
+ * that holds no approved photograph — is reported the same way as one that
+ * does not exist, so an id cannot be probed.
  */
 export default async function AlbumDetailPage({
   params,
 }: AlbumDetailPageProps) {
   const { albumId } = await params;
-  const album = findGalleryAlbum(albumId);
+  const album = await getPublicGalleryAlbum(albumId);
 
   if (!album) {
     notFound();

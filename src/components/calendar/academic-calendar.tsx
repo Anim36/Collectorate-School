@@ -3,14 +3,11 @@
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+import { getPublicCalendarMonthAction } from "@/app/(public)/actions";
 import { Button } from "@/components/ui/button";
 import { CalendarMonthGrid, eventDotClass } from "@/components/calendar/calendar-month-grid";
-import {
-  calendarEventKinds,
-  calendarEvents,
-  calendarHighlights,
-  calendarInitialMonth,
-} from "@/data/calendar";
+import { calendarEventKinds } from "@/types/public";
+import type { PublicCalendarMonth } from "@/types/public";
 import { cn } from "@/lib/utils";
 
 const MONTH_NAMES = [
@@ -39,32 +36,39 @@ const MONTH_NAMES = [
  * Tablet (2:2535): the same layout, but the cards wrap into two rows.
  * Mobile (2:2686): the controls stack, the week rows shrink to 48px, and the
  * cards stack.
+ *
+ * The entries come from the database, one month at a time: the page hands
+ * over the current month, and every switch asks the read-only public action
+ * for the rows of the month the reader turned to.
  */
-export function AcademicCalendar() {
-  const [year, setYear] = React.useState<number>(calendarInitialMonth.year);
-  const [month, setMonth] = React.useState<number>(calendarInitialMonth.month);
+export function AcademicCalendar({
+  initialMonth,
+}: {
+  initialMonth: PublicCalendarMonth;
+}) {
+  const [month, setMonth] = React.useState<PublicCalendarMonth>(initialMonth);
 
-  const events = React.useMemo(
-    () =>
-      calendarEvents
-        .filter((entry) => entry.year === year && entry.month === month)
-        .map((entry) => ({
-          day: entry.day,
-          label: entry.label,
-          kind: entry.kind,
-        })),
-    [year, month],
-  );
+  const moveMonth = async (offset: number) => {
+    const next = new Date(
+      Date.UTC(month.year, month.month - 1 + offset, 1),
+    );
+    const year = next.getUTCFullYear();
+    const monthNumber = next.getUTCMonth() + 1;
 
-  const moveMonth = (offset: number) => {
-    const next = new Date(Date.UTC(year, month - 1 + offset, 1));
-    setYear(next.getUTCFullYear());
-    setMonth(next.getUTCMonth() + 1);
+    setMonth({ year, month: monthNumber, events: [], highlights: [] });
+
+    const loaded = await getPublicCalendarMonthAction(year, monthNumber);
+
+    setMonth(loaded);
   };
 
   const goToToday = () => {
-    setYear(calendarInitialMonth.year);
-    setMonth(calendarInitialMonth.month);
+    const now = new Date();
+
+    moveMonth(
+      (now.getUTCFullYear() - month.year) * 12 +
+        (now.getUTCMonth() + 1 - month.month),
+    );
   };
 
   return (
@@ -85,7 +89,7 @@ export function AcademicCalendar() {
             aria-live="polite"
             className="text-body font-semibold leading-[1.45] text-ink"
           >
-            {MONTH_NAMES[month - 1]} {year}
+            {MONTH_NAMES[month.month - 1]} {month.year}
           </p>
 
           <button
@@ -104,7 +108,11 @@ export function AcademicCalendar() {
       </div>
 
       {/* Month grid. */}
-      <CalendarMonthGrid year={year} month={month} events={events} />
+      <CalendarMonthGrid
+        year={month.year}
+        month={month.month}
+        events={month.events}
+      />
 
       {/* Legend. */}
       <p className="mt-8 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-caption leading-[1.45] text-muted">
@@ -125,7 +133,7 @@ export function AcademicCalendar() {
       </h2>
 
       <ul className="mt-8 grid w-full grid-cols-1 gap-8 md:grid-cols-2 md:gap-x-6 md:gap-y-8 xl:grid-cols-3">
-        {calendarHighlights.map((highlight) => (
+        {month.highlights.map((highlight) => (
           <li key={highlight.heading} className="w-full">
             <article className="flex w-full flex-col items-start gap-4 rounded-[12px] border border-border bg-surface p-6">
               <h3 className="text-title font-semibold leading-[1.45] text-ink">

@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import type { PortalIconName } from "@/data/portal-navigation";
+import type { PortalIconName } from "@/types/portal";
 
 /**
  * Icon set for the portal navigation.

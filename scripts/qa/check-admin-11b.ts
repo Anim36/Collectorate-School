@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 
 import { prisma } from "@/server/db";
 import { deleteFile } from "@/server/storage";
+import { deleteQaAuditRows } from "./audit-cleanup";
 import {
   attachFiles,
   listNotices,
@@ -97,23 +98,31 @@ async function createActor(): Promise<string> {
 /** Removes every row the checks wrote. */
 async function cleanup(): Promise<void> {
   // The audit rows of the checks belong to their own account.
-  await prisma.auditLog.deleteMany({ where: { actorId: ACTOR_ID } });
+  await deleteQaAuditRows(prisma, { actorIds: [ACTOR_ID] });
 
   // The audit rows of an earlier run of the checks name the rows of that run,
   // so they are found by their entity id as well.
-  await prisma.auditLog.deleteMany({
-    where: { entityId: { startsWith: PREFIX } },
-  });
+  await deleteQaAuditRows(prisma, { entityPrefix: PREFIX });
 
   // An audit row about a file names the file, so it is found by the name it
-  // carries.
-  await prisma.auditLog.deleteMany({
+  // carries. Prisma selects the rows; the cleanup function deletes them.
+  const fileRows = await prisma.auditLog.findMany({
     where: { metadata: { path: ["name"], string_contains: PREFIX } },
+    select: { id: true },
+  });
+
+  await deleteQaAuditRows(prisma, {
+    rowIds: fileRows.map((row) => row.id),
   });
 
   // An audit row about a batch of files carries the names of the files.
-  await prisma.auditLog.deleteMany({
+  const batchRows = await prisma.auditLog.findMany({
     where: { metadata: { path: ["names", "0"], string_contains: PREFIX } },
+    select: { id: true },
+  });
+
+  await deleteQaAuditRows(prisma, {
+    rowIds: batchRows.map((row) => row.id),
   });
 
   // The photographs the checks uploaded are named after the prefix, so they

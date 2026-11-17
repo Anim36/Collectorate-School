@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { deleteQaAuditRows } from "./audit-cleanup";
 
 /**
  * Puts an account in place for the change-password page, which only renders
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
   const clean = process.argv.includes("--clean");
 
   if (clean) {
-    await prisma.auditLog.deleteMany({ where: { entityId: LOGIN_ID } });
+    await deleteQaAuditRows(prisma, { entityIds: [LOGIN_ID] });
     await prisma.user.deleteMany({ where: { loginId: LOGIN_ID } });
 
     console.log("account removed:", LOGIN_ID);

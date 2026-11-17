@@ -12,6 +12,11 @@ import {
 import { changePasswordSchema } from "@/lib/password-schema";
 import { loginRoleSchema, type LoginRole } from "@/lib/login-schema";
 import { recordLogout } from "@/server/services/auth";
+import {
+  RATE_LIMIT_MESSAGE,
+  checkRateLimit,
+  rateLimitBucket,
+} from "@/server/rate-limit";
 
 /**
  * The result of a sign-in, returned to the form.
@@ -56,26 +61,14 @@ export async function loginAction(
 
   const role: LoginRole = parsedRole.data;
 
-  // The credentials are checked here rather than by the provider, so the
-  // role of the account is known before the redirect is worked out. The
-  // provider checks them again when it writes the session, and that second
-  // check is the one that is audited, so one sign-in leaves one audit row.
-  const { authenticateCredentials } = await import("@/server/services/auth");
-
-  const result = await authenticateCredentials(
-    { loginId, password, role },
-    { auditSuccess: false },
-  );
-
-  if (!result.ok) {
-    return {
-      ok: false,
-      message: GENERIC_AUTH_ERROR,
-      redirectTo: null,
-    };
-  }
-
-  const home = ROLE_HOME[result.role as SessionRole];
+  // The provider checks the credentials once, when it writes the session. A
+  // second check here would cost a second bcrypt comparison, a second audit
+  // row and a second turn of the rate-limit counter for the same attempt.
+  //
+  // The home of the form's role is also the home of the account: the provider
+  // refuses a sign-in made from a tab that does not match the account's real
+  // role, so a successful sign-in always belongs to the role that was sent.
+  const home = ROLE_HOME[role as SessionRole];
 
   try {
     await signIn("credentials", {
@@ -138,6 +131,15 @@ export async function changePasswordAction(
       message: "Your session has ended. Please sign in again.",
       redirectTo: null,
     };
+  }
+
+  const limit = await checkRateLimit(
+    "change-password",
+    await rateLimitBucket(session.user.id),
+  );
+
+  if (!limit.allowed) {
+    return { ok: false, message: RATE_LIMIT_MESSAGE, redirectTo: null };
   }
 
   // The same rules the form applies, so a request that skips the form is

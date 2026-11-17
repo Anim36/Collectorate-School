@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
+import { CACHE_TAGS, revalidatePublicCache } from "@/server/cache-tags";
 import { getCurrentUser } from "@/server/auth-guard";
+import {
+  RATE_LIMIT_MESSAGE,
+  checkRateLimit,
+  rateLimitBucket,
+} from "@/server/rate-limit";
 import type { ServiceResult } from "@/server/services/admin-schemas";
 import type { UserList } from "@/server/services/users";
 import type {
@@ -535,6 +541,8 @@ export async function saveNoticeAction(input: {
 
   if (result.ok) {
     revalidatePath("/admin/notices");
+    revalidatePublicCache(CACHE_TAGS.notices);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -556,6 +564,8 @@ export async function publishNoticeAction(
 
   if (result.ok) {
     revalidatePath("/admin/notices");
+    revalidatePublicCache(CACHE_TAGS.notices);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -577,6 +587,8 @@ export async function unpublishNoticeAction(
 
   if (result.ok) {
     revalidatePath("/admin/notices");
+    revalidatePublicCache(CACHE_TAGS.notices);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -598,6 +610,8 @@ export async function deleteNoticeAction(
 
   if (result.ok) {
     revalidatePath("/admin/notices");
+    revalidatePublicCache(CACHE_TAGS.notices);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -614,12 +628,17 @@ export async function attachFilesAction(input: {
 
   if (!admin) return refuse();
 
+  const limit = await checkRateLimit("upload", await rateLimitBucket(admin.id));
+
+  if (!limit.allowed) return { ok: false, error: RATE_LIMIT_MESSAGE };
+
   const { attachFiles } = await import("@/server/services/notices");
 
   const result = await attachFiles(admin.id, input);
 
   if (result.ok) {
     revalidatePath("/admin/notices");
+    revalidatePublicCache(CACHE_TAGS.notices);
   }
 
   return result;
@@ -641,6 +660,7 @@ export async function removeAttachmentAction(
 
   if (result.ok) {
     revalidatePath("/admin/notices");
+    revalidatePublicCache(CACHE_TAGS.notices);
   }
 
   return result;
@@ -745,6 +765,8 @@ export async function approvePhotoAction(
 
   if (result.ok) {
     revalidatePath("/admin/gallery");
+    revalidatePublicCache(CACHE_TAGS.gallery);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -767,6 +789,7 @@ export async function rejectPhotoAction(
 
   if (result.ok) {
     revalidatePath("/admin/gallery");
+    revalidatePublicCache(CACHE_TAGS.gallery);
   }
 
   return result;
@@ -788,6 +811,8 @@ export async function deletePhotoAction(
 
   if (result.ok) {
     revalidatePath("/admin/gallery");
+    revalidatePublicCache(CACHE_TAGS.gallery);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -807,12 +832,18 @@ export async function uploadPhotosAction(input: {
 
   if (!admin) return refuse();
 
+  const limit = await checkRateLimit("upload", await rateLimitBucket(admin.id));
+
+  if (!limit.allowed) return { ok: false, error: RATE_LIMIT_MESSAGE };
+
   const { uploadPhotos } = await import("@/server/services/gallery");
 
   const result = await uploadPhotos(admin.id, input);
 
   if (result.ok) {
     revalidatePath("/admin/gallery");
+    revalidatePublicCache(CACHE_TAGS.gallery);
+    revalidatePublicCache(CACHE_TAGS.home);
   }
 
   return result;
@@ -873,6 +904,7 @@ export async function saveRoutineAction(input: {
 
   if (result.ok) {
     revalidatePath("/admin/routine");
+    revalidatePublicCache(CACHE_TAGS.routine);
   }
 
   return result;
@@ -894,6 +926,7 @@ export async function publishRoutineAction(
 
   if (result.ok) {
     revalidatePath("/admin/routine");
+    revalidatePublicCache(CACHE_TAGS.routine);
   }
 
   return result;
@@ -950,6 +983,7 @@ export async function saveCalendarEventAction(input: {
 
   if (result.ok) {
     revalidatePath("/admin/calendar");
+    revalidatePublicCache(CACHE_TAGS.calendar);
   }
 
   return result;
@@ -971,6 +1005,7 @@ export async function deleteCalendarEventAction(
 
   if (result.ok) {
     revalidatePath("/admin/calendar");
+    revalidatePublicCache(CACHE_TAGS.calendar);
   }
 
   return result;
@@ -1028,6 +1063,7 @@ export async function saveFeeStructureAction(input: {
 
   if (result.ok) {
     revalidatePath("/admin/fees");
+    revalidatePublicCache(CACHE_TAGS.fees);
   }
 
   return result;

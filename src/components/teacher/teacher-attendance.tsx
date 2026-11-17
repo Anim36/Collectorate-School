@@ -14,21 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
-  findTeacherClass,
-  findTeacherRoll,
-  findTeacherSheet,
-  formatTeacherDate,
-  teacherAttendanceDate,
-  teacherAttendanceSheets,
-  teacherClasses,
-  teacherGreeting,
-  teacherHistoryMonth,
-  teacherHistoryMonths,
-  teacherToday,
-  type AttendanceMarks,
-  type AttendanceSheet,
-  type AttendanceStatus,
-} from "@/data/teacher";
+  loadTeacherAttendanceAction,
+  saveTeacherAttendanceAction,
+} from "@/app/teacher/actions";
+import type {
+  TeacherAttendanceData,
+  TeacherAttendanceHistoryRow,
+  TeacherAttendanceStatus,
+  TeacherStudentRow,
+} from "@/types/teacher";
 
 /** Students shown on one page of the marking table. */
 const PAGE_SIZE = 5;
@@ -55,41 +49,51 @@ const PAGE_SIZE = 5;
  * The filters sit above the tab line, as Figma draws them, and the tab root
  * dissolves so that the page body keeps one 24px rhythm from the heading to
  * the "Last saved" line.
+ *
+ * The class and the day are read on the server, so the sheet of a class that
+ * is not the teacher's is never shown. The counters are counted again by the
+ * server when the sheet is saved, so the numbers after a save are the numbers
+ * the database holds.
  */
-export function TeacherAttendance() {
+export function TeacherAttendance({
+  initial,
+}: {
+  /** The attendance the server read for the teacher. */
+  initial: TeacherAttendanceData;
+}) {
   const { toast } = useToast();
 
   const [tab, setTab] = React.useState("sheet");
-  const [classId, setClassId] = React.useState("class-9");
-  const [section, setSection] = React.useState("A");
-  const [date, setDate] = React.useState(teacherAttendanceDate);
-  const [historyClass, setHistoryClass] = React.useState("class-9");
-  const [historyMonth, setHistoryMonth] = React.useState(teacherHistoryMonth);
+  const [classId, setClassId] = React.useState(initial.classes[0]?.id ?? "");
+  const [date, setDate] = React.useState(initial.sheet?.date ?? initial.today);
+  const [historyClassId, setHistoryClassId] = React.useState("");
+  const [historyMonth, setHistoryMonth] = React.useState("");
 
-  const [marks, setMarks] = React.useState<AttendanceMarks>({});
-  const [page, setPage] = React.useState(0);
-  const [lastSaved, setLastSaved] = React.useState("09:12 AM");
-  const [dirty, setDirty] = React.useState(false);
-  /**
-   * The saved sheet the teacher opened from the history, if any.
-   * A sheet opened this way is read-only until the reader picks another
-   * class, section or date.
-   */
-  const [readOnlySheetId, setReadOnlySheetId] = React.useState<string | null>(
-    null,
+  const [students, setStudents] = React.useState<readonly TeacherStudentRow[]>(
+    initial.students,
   );
+  const [marks, setMarks] = React.useState<Record<string, TeacherAttendanceStatus>>(
+    { ...(initial.sheet?.marks ?? {}) },
+  );
+  const [history, setHistory] = React.useState<
+    readonly TeacherAttendanceHistoryRow[]
+  >(initial.history);
+  const [months, setMonths] = React.useState<readonly string[]>(
+    initial.months,
+  );
+  const [editable, setEditable] = React.useState(initial.editable);
+  const [lockedReason, setLockedReason] = React.useState(initial.lockedReason);
+  const [page, setPage] = React.useState(0);
+  const [lastSaved, setLastSaved] = React.useState(initial.sheet?.savedAt ?? "");
+  const [dirty, setDirty] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
 
   // The top bar names the open tab, as Figma draws it.
   useSetPortalSection(
     tab === "history" ? "Attendance history" : "Attendance Sheet",
   );
 
-  const currentClass = findTeacherClass(classId);
-  const roll = findTeacherRoll(classId, section);
-  const students = React.useMemo(
-    () => roll?.students ?? [],
-    [roll],
-  );
+  const currentClass = initial.classes.find((entry) => entry.id === classId);
 
   // The first five students are shown; the rest are paged through.
   const pageCount = Math.max(1, Math.ceil(students.length / PAGE_SIZE));
@@ -112,15 +116,6 @@ export function TeacherAttendance() {
     return tally;
   }, [marks, students]);
 
-  // The sheet opens on the marks of the chosen class, section and date.
-  React.useEffect(() => {
-    const saved = findTeacherSheet(classId, section, date);
-
-    setMarks(saved?.marks ?? {});
-    setPage(0);
-    setDirty(false);
-  }, [classId, section, date]);
-
   // Leaving the page with unsaved changes asks for a confirmation.
   React.useEffect(() => {
     if (!dirty) return;
@@ -134,28 +129,66 @@ export function TeacherAttendance() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const confirmSwitch = (action: () => void) => {
-    if (
-      dirty &&
-      !window.confirm(
-        "You have unsaved attendance changes. Leaving now will discard them.",
-      )
-    ) {
-      return;
-    }
+  /**
+   * Reads the sheet of another class or day from the server.
+   *
+   * The server decides which classes the teacher may open, so a class that is
+   * not theirs never reaches the page.
+   */
+  const loadSheet = React.useCallback(
+    async (next: {
+      classId: string;
+      date: string;
+      historyClassId?: string;
+      historyMonth?: string;
+    }) => {
+      if (
+        dirty &&
+        !window.confirm(
+          "You have unsaved attendance changes. Leaving now will discard them.",
+        )
+      ) {
+        return;
+      }
 
-    // Picking another class, section or date leaves the read-only sheet.
-    setReadOnlySheetId(null);
-    action();
-  };
+      const result = await loadTeacherAttendanceAction(next);
 
-  const handleMarkChange = (studentId: string, status: AttendanceStatus) => {
+      if (!result.ok) {
+        toast({
+          title: "Could not load the sheet",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const data = result.data;
+
+      setClassId(next.classId);
+      setDate(next.date);
+      setStudents(data.students);
+      setMarks({ ...data.sheet?.marks });
+      setHistory(data.history);
+      setMonths(data.months);
+      setEditable(data.editable);
+      setLockedReason(data.lockedReason);
+      setPage(0);
+      setDirty(false);
+      setLastSaved(data.sheet?.savedAt ?? "");
+    },
+    [dirty, toast],
+  );
+
+  const handleMarkChange = (
+    studentId: string,
+    status: TeacherAttendanceStatus,
+  ) => {
     setMarks((previous) => ({ ...previous, [studentId]: status }));
     setDirty(true);
   };
 
   const markAllPresent = () => {
-    const next: Record<string, AttendanceStatus> = { ...marks };
+    const next: Record<string, TeacherAttendanceStatus> = { ...marks };
 
     for (const student of students) {
       next[student.id] = "present";
@@ -165,7 +198,35 @@ export function TeacherAttendance() {
     setDirty(true);
   };
 
-  const save = () => {
+  /**
+   * Saves the sheet.
+   *
+   * The server counts the marks again and writes them in one transaction, so
+   * the counters that come back are the counts the database holds.
+   */
+  const save = async () => {
+    setSaving(true);
+
+    const result = await saveTeacherAttendanceAction({
+      classId,
+      date,
+      marks: students.map((student) => ({
+        studentId: student.id,
+        status: marks[student.id] ?? "present",
+      })),
+    });
+
+    setSaving(false);
+
+    if (!result.ok) {
+      toast({
+        title: "Could not save the attendance",
+        description: result.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setDirty(false);
     setLastSaved(
       new Intl.DateTimeFormat("en-GB", {
@@ -177,37 +238,32 @@ export function TeacherAttendance() {
 
     toast({
       title: "Attendance saved",
-      description: `${currentClass?.label ?? "Class"} · Section ${section} · ${formatTeacherDate(date)}`,
+      description: `${currentClass?.name ?? "Class"} · ${formatDate(date)}`,
     });
   };
 
-  const openSheet = (sheet: AttendanceSheet) => {
-    setReadOnlySheetId(sheet.id);
-    setClassId(sheet.classId);
-    setSection(sheet.section);
-    setDate(sheet.date);
+  const openSheet = async (sheet: TeacherAttendanceHistoryRow) => {
+    await loadSheet({
+      classId: sheet.classId,
+      date: sheet.date,
+      historyClassId,
+      historyMonth,
+    });
     setTab("sheet");
   };
 
-  const monthName = historyMonth.split(" ")[0];
-  const historySheets = teacherAttendanceSheets.filter((sheet) => {
-    const classMatches =
-      historyClass === "all" || sheet.classId === historyClass;
-    const monthMatches = sheet.dateLabel.split(" ")[1] === monthName.slice(0, 3);
+  const classOptions = initial.classes.map((item) => item.name);
 
-    return classMatches && monthMatches;
-  });
-
-  const classOptions = teacherClasses.map((item) => item.label);
-  const sectionOptions = (currentClass?.sections ?? []).map(
-    (item) => `Section ${item}`,
-  );
+  // The months come from every sheet of the teacher and not from the history
+  // that is on the screen, so the filter still offers the other months after
+  // one of them has been picked.
+  const monthLabels = monthOptions(months);
 
   return (
     <div className="flex w-full flex-col gap-6 px-6 py-6 md:px-8 md:py-8">
       <TeacherPageHeader
         title="Attendance Sheet"
-        description={teacherGreeting.context}
+        description={initial.context}
       />
 
       {/* The filters sit above the tab line, as Figma draws them. */}
@@ -216,26 +272,12 @@ export function TeacherAttendance() {
           <FilterField
             label="Class"
             options={classOptions}
-            value={currentClass?.label ?? ""}
+            value={currentClass?.name ?? ""}
             onValueChange={(value) => {
-              const next = teacherClasses.find((item) => item.label === value);
+              const next = initial.classes.find((item) => item.name === value);
               if (!next) return;
 
-              confirmSwitch(() => {
-                setClassId(next.id);
-                setSection(next.sections[0]);
-              });
-            }}
-            className="md:w-[224px] xl:w-[368px]"
-          />
-
-          <FilterField
-            label="Section"
-            options={sectionOptions}
-            value={`Section ${section}`}
-            onValueChange={(value) => {
-              const next = value.replace("Section ", "");
-              confirmSwitch(() => setSection(next));
+              void loadSheet({ classId: next.id, date });
             }}
             className="md:w-[224px] xl:w-[368px]"
           />
@@ -243,9 +285,9 @@ export function TeacherAttendance() {
           <DateFilterField
             label="Date"
             value={date}
-            displayValue={formatTeacherDate(date)}
-            onValueChange={setDate}
-            maxDate={teacherToday}
+            displayValue={formatDate(date)}
+            onValueChange={(value) => void loadSheet({ classId, date: value })}
+            maxDate={initial.today}
             showCalendarIcon
             className="md:w-[224px] xl:w-[368px]"
           />
@@ -256,37 +298,40 @@ export function TeacherAttendance() {
             label="Class"
             options={["All classes", ...classOptions]}
             value={
-              historyClass === "all"
+              historyClassId === ""
                 ? "All classes"
-                : (findTeacherClass(historyClass)?.label ?? "All classes")
+                : (initial.classes.find((entry) => entry.id === historyClassId)
+                    ?.name ?? "All classes")
             }
             onValueChange={(value) => {
               if (value === "All classes") {
-                setHistoryClass("all");
+                setHistoryClassId("");
                 return;
               }
 
-              const next = teacherClasses.find((item) => item.label === value);
-              if (next) setHistoryClass(next.id);
+              const next = initial.classes.find((item) => item.name === value);
+              if (next) setHistoryClassId(next.id);
             }}
             className="md:w-[224px] xl:w-[368px]"
           />
 
           <FilterField
             label="Month"
-            options={teacherHistoryMonths}
-            value={historyMonth}
-            onValueChange={setHistoryMonth}
+            options={monthLabels}
+            value={
+              months.includes(historyMonth) ? historyMonth : months[0] ?? ""
+            }
+            onValueChange={(value) => {
+              const next = months.find((key) => monthLabel(key) === value);
+
+              setHistoryMonth(next ?? "");
+            }}
             className="md:w-[224px] xl:w-[368px]"
           />
         </div>
       )}
 
-      <Tabs
-        value={tab}
-        onValueChange={setTab}
-        className="contents"
-      >
+      <Tabs value={tab} onValueChange={setTab} className="contents">
         <TabsList className="w-full p-0">
           <TabsTrigger value="sheet">Attendance sheet</TabsTrigger>
           <span aria-hidden className="px-4 text-body leading-[1.45] text-muted">
@@ -308,13 +353,14 @@ export function TeacherAttendance() {
           <Button
             type="button"
             onClick={markAllPresent}
+            disabled={!editable || students.length === 0}
             className="h-[49px] w-[175px] px-0"
           >
             Mark all present
           </Button>
 
           <TeacherAttendanceMarkingTable
-            title={`${currentClass?.label ?? "Class"} · ${section}  /  ${visibleStudents.length} of ${students.length} students shown`}
+            title={`${currentClass?.name ?? "Class"}  /  ${visibleStudents.length} of ${students.length} students shown`}
             students={visibleStudents}
             marks={marks}
             onMarkChange={handleMarkChange}
@@ -322,27 +368,34 @@ export function TeacherAttendance() {
             page={currentPage}
             pageCount={pageCount}
             totalStudents={students.length}
-            readOnly={readOnlySheetId !== null}
+            readOnly={!editable}
           />
+
+          {lockedReason ? (
+            <p className="text-caption leading-[1.45] text-muted">
+              {lockedReason}
+            </p>
+          ) : null}
 
           <Button
             type="button"
-            onClick={save}
-            disabled={readOnlySheetId !== null}
+            onClick={() => void save()}
+            disabled={!editable || saving || students.length === 0}
             className="h-[47px] w-[178px] px-0"
           >
             Save attendance
           </Button>
 
           <p className="text-caption leading-[1.45] text-muted">
-            Last saved {lastSaved} · All changes saved
+            {lastSaved ? `Last saved ${lastSaved} · ` : ""}
+            {dirty ? "Unsaved changes" : "All changes saved"}
           </p>
         </TabsContent>
 
         <TabsContent value="history" className="contents">
           <TeacherAttendanceHistoryTable
-            sheets={historySheets}
-            onOpenSheet={openSheet}
+            sheets={history}
+            onOpenSheet={(sheet) => void openSheet(sheet)}
           />
 
           <Button type="button" className="h-[49px] w-[194px] px-0">
@@ -353,4 +406,40 @@ export function TeacherAttendance() {
       </Tabs>
     </div>
   );
+}
+
+/**
+ * The date the way the tables show it, e.g. "04 Nov 2026".
+ */
+function formatDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+
+  if (!year || !month || !day) return isoDate;
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+/**
+ * The months the history holds, newest first, e.g. "November 2026".
+ */
+function monthOptions(months: readonly string[]): string[] {
+  return months.map(monthLabel);
+}
+
+/**
+ * The label of a month key, e.g. "November 2026".
+ */
+function monthLabel(key: string): string {
+  const [year, month] = key.split("-").map(Number);
+
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
 }

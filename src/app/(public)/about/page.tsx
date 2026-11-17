@@ -10,7 +10,7 @@ import {
   aboutIntroduction,
   aboutTimeline,
   aboutVisionMission,
-} from "@/data/public-pages";
+} from "@/content/about";
 
 export const metadata: Metadata = {
   title: "About",

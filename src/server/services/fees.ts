@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db";
+import { MAX_LIST_ROWS } from "@/server/limits";
 import {
   issueFeesSchema,
   listPaymentsSchema,
@@ -374,6 +375,7 @@ export async function listPendingPayments(): Promise<AdminPendingPayment[]> {
   const payments = await prisma.payment.findMany({
     where: { status: "PENDING" },
     orderBy: { createdAt: "asc" },
+    take: MAX_LIST_ROWS,
     select: {
       id: true,
       amountPoisha: true,

@@ -76,6 +76,5 @@ export function buildLoginSchema(copy: LoginEntryCopy) {
         copy.invalidMessage,
       ),
     password: z.string().min(1, "Enter your password"),
-    remember: z.boolean(),
   });
 }

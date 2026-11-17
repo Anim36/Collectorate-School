@@ -85,7 +85,6 @@ export function LoginForm({ entry }: LoginFormProps = {}) {
       role: isAdmin ? "ADMIN" : "STUDENT",
       identifier: "",
       password: "",
-      remember: true,
     },
   });
 
@@ -97,7 +96,7 @@ export function LoginForm({ entry }: LoginFormProps = {}) {
    */
   const changeRole = (next: LoginRole) => {
     setRole(next);
-    reset({ role: next, identifier: "", password: "", remember: true });
+    reset({ role: next, identifier: "", password: "" });
     setSignInError(false);
   };
 
@@ -207,16 +206,8 @@ export function LoginForm({ entry }: LoginFormProps = {}) {
 
         <div
           data-auth="remember"
-          className="mt-6 flex items-center justify-between gap-4"
+          className="mt-6 flex items-center justify-end gap-4"
         >
-          <label className="flex items-center gap-2 text-caption leading-[1.45] text-ink">
-            <input
-              type="checkbox"
-              className="size-4 rounded-[4px] border border-border accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              {...register("remember")}
-            />
-            Remember me
-          </label>
           <button
             type="button"
             onClick={() => setForgotPassword(true)}

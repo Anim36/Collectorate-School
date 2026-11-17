@@ -9,6 +9,11 @@ import type {
   StudentNoticeBoard,
   StudentNoticeFilterInput,
 } from "@/types/student";
+import {
+  RATE_LIMIT_MESSAGE,
+  checkRateLimit,
+  rateLimitBucket,
+} from "@/server/rate-limit";
 
 /**
  * The actions of the student portal.
@@ -41,6 +46,13 @@ export async function submitStudentPaymentAction(
   if (!user || user.role !== "STUDENT" || user.mustChangePassword) {
     return refuse();
   }
+
+  const limit = await checkRateLimit(
+    "payment-request",
+    await rateLimitBucket(user.id),
+  );
+
+  if (!limit.allowed) return { ok: false, error: RATE_LIMIT_MESSAGE };
 
   const { submitStudentPayment } = await import("@/server/services/student-fees");
 

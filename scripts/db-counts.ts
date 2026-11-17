@@ -79,8 +79,6 @@ async function main(): Promise<void> {
     routinePeriods: await prisma.routinePeriod.count(),
     calendarEvents: await prisma.calendarEvent.count(),
     auditLogs: await prisma.auditLog.count(),
-    navigationItems: await prisma.navigationItem.count(),
-    portalNavItems: await prisma.portalNavItem.count(),
     admissionSteps: await prisma.admissionStep.count(),
     quickLinks: await prisma.quickLink.count(),
     schoolStats: await prisma.schoolStat.count(),

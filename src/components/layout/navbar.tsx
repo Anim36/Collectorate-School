@@ -13,8 +13,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { navItems, type NavDropdown } from "@/data/navigation";
-import { notices } from "@/data/notices";
+import { navItems, type NavDropdown } from "@/config/navigation";
+import { SITE } from "@/config/site";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn } from "@/lib/utils";
 
@@ -116,17 +116,17 @@ function UtilityLink({
 }
 
 /** The notification bell, carrying the count of published notices. */
-function NotificationBell() {
+function NotificationBell({ noticeCount }: { noticeCount: number }) {
   return (
     <Link
       href="/notice"
-      aria-label={`Notice board, ${notices.length} notices`}
+      aria-label={`Notice board, ${noticeCount} notices`}
       title="Notice board"
       className={cn(utilityButtonClass, "relative")}
     >
       <Bell aria-hidden className="size-5" />
       <span className="absolute -right-1 -top-1 flex min-w-[22px] items-center justify-center rounded-full bg-danger px-1 text-[11px] font-bold leading-[1.45] text-destructive-foreground">
-        {notices.length}
+        {noticeCount}
       </span>
     </Link>
   );
@@ -222,7 +222,7 @@ function MobileDrawer({
  * Below the large breakpoint the pill is replaced by the hamburger drawer,
  * while the crest, the wordmark and the utility icons stay in the band.
  */
-export function Navbar() {
+export function Navbar({ noticeCount = 0 }: { noticeCount?: number }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
@@ -259,7 +259,7 @@ export function Navbar() {
       <div className="relative flex min-h-[96px] items-center gap-3 px-4 py-3 md:min-h-[102px] md:gap-5 md:px-8 xl:grid xl:grid-cols-[1fr_auto_1fr] xl:gap-6 xl:px-12">
         <Link
           href="/"
-          aria-label="Narail Collectorate School — home"
+          aria-label={`${SITE.name} — home`}
           className="flex shrink-0 items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
         >
           <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white">
@@ -267,10 +267,10 @@ export function Navbar() {
           </span>
 
           <span className="flex items-center gap-3 text-white">
-            
-            
+
+
             <span className="hidden text-body-lg font-semibold leading-none sm:inline">
-               Narail Collectorate School
+               {SITE.name}
             </span>
           </span>
         </Link>
@@ -306,7 +306,7 @@ export function Navbar() {
 
           <ThemeToggle className="size-10 shrink-0 rounded-full bg-transparent p-0 text-white/90 hover:bg-white/10 hover:text-white focus-visible:ring-offset-0 [&_svg]:size-5" />
 
-          <NotificationBell />
+          <NotificationBell noticeCount={noticeCount} />
 
           <button
             type="button"

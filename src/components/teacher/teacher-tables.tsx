@@ -2,8 +2,8 @@ import { PortalTable } from "@/components/shared/portal-table";
 import type {
   TeacherAttendanceRow,
   TeacherClassRow,
-  TeacherNoticeRow,
-} from "@/data/teacher";
+  TeacherNoticeSummaryRow,
+} from "@/types/teacher";
 
 export interface TeacherClassesTableProps {
   /** Rows rendered in the table. */
@@ -98,7 +98,7 @@ export function TeacherAttendanceTable({
 
 export interface TeacherNoticesTableProps {
   /** Rows rendered in the table. */
-  rows: readonly TeacherNoticeRow[];
+  rows: readonly TeacherNoticeSummaryRow[];
   className?: string;
 }
 
@@ -111,8 +111,8 @@ export interface TeacherNoticesTableProps {
  */
 export function TeacherNoticesTable({ rows, className }: TeacherNoticesTableProps) {
   const columns = [
-    { header: "Date", cell: (row: TeacherNoticeRow) => row.date },
-    { header: "Notice", cell: (row: TeacherNoticeRow) => row.notice },
+    { header: "Date", cell: (row: TeacherNoticeSummaryRow) => row.date },
+    { header: "Notice", cell: (row: TeacherNoticeSummaryRow) => row.notice },
   ];
 
   const mobileRecords = rows.map((row) => ({

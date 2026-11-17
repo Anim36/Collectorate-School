@@ -173,6 +173,7 @@ model User {
 
   @@index([role])
   @@index([isActive])
+  @@index([role, isActive])
   @@map("users")
 }
 
@@ -578,6 +579,7 @@ model Fee {
   @@unique([studentId, feeStructureId, period])
   @@index([studentId, status])
   @@index([feeStructureId])
+  @@index([status, dueDate])
   @@map("fees")
 }
 
@@ -626,6 +628,7 @@ model Payment {
   @@index([studentId, paidAt])
   @@index([method])
   @@index([status])
+  @@index([status, paidAt])
   @@index([recordedById])
   @@index([reviewedById])
   @@map("payments")
@@ -905,6 +908,7 @@ model AuditLog {
   @@index([actorId])
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([action, createdAt])
   @@map("audit_log")
 }
 
@@ -953,40 +957,30 @@ model AboutContent {
   @@map("about_content")
 }
 
-/// One entry of the public navbar. A dropdown is a parent with children.
-model NavigationItem {
-  id       String  @id @default(cuid())
-  label    String
-  href     String?
-  parentId String? @map("parent_id")
-  position Int     @default(0)
-  visible  Boolean @default(true)
+/**
+ * The navigation is not a database table.
+ *
+ * The public navbar and the three portal sidebars are code, in
+ * `src/config/navigation.ts` and `src/data/portal-navigation.ts`, because the
+ * links are part of the route contract and a row cannot add a page that the
+ * app does not serve. The two tables that used to hold them were never read by
+ * the app, so B7 removed them.
+ */
 
-  parent   NavigationItem?  @relation("NavigationChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children NavigationItem[] @relation("NavigationChildren")
+/**
+ * ------------------------------------------------------------ rate limits ---
+ */
 
-  @@index([parentId])
-  @@index([position])
-  @@map("navigation_items")
-}
+/// One rate-limit hit. The newest rows in a bucket are counted.
+model RateLimitAttempt {
+  id         String   @id @default(cuid())
+  /// What is limited, e.g. "login" or "payment-request".
+  action     String
+  /// The client or account the limit follows, e.g. "ip:203.0.113.4".
+  bucket     String
+  createdAt  DateTime @default(now()) @map("created_at")
 
-/// One entry of a portal sidebar or bottom tab bar.
-model PortalNavItem {
-  id       String   @id @default(cuid())
-  role     UserRole
-  label    String
-  href     String
-  /// The name of the icon, e.g. "attendance".
-  icon     String?
-  /// The kind of the entry: "link", "dropdown" or "logout".
-  kind     String   @default("link")
-  position Int      @default(0)
-  parentId String?  @map("parent_id")
-
-  parent   PortalNavItem?  @relation("PortalNavChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children PortalNavItem[] @relation("PortalNavChildren")
-
-  @@index([role, position])
-  @@index([parentId])
-  @@map("portal_nav_items")
+  @@index([action, bucket, createdAt])
+  @@index([createdAt])
+  @@map("rate_limit_attempts")
 }

@@ -6,12 +6,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { TeacherCard } from "@/components/shared/teacher-card";
 import { StaffFilters } from "@/components/teachers/staff-filters";
 import { StaffGrid } from "@/components/teachers/staff-grid";
-import {
-  staffMembers,
-  staffSubjects,
-  staffTabs,
-  type StaffGroup,
-} from "@/data/public-pages";
+import { staffTabs, type PublicStaffMember } from "@/types/public";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,18 +14,28 @@ import { cn } from "@/lib/utils";
  * Figma "Teachers & Staff main" (2:942 desktop, 2:1033 tablet, 2:1121
  * mobile): a tab row, the search and subject filters and a responsive grid of
  * teacher cards — three across on desktop, two on tablet, one on mobile.
+ *
+ * The members come from the server: only the name, the designation line, the
+ * subject and the portrait of every member, so nothing private is published.
+ * The search and the filters run in the browser over that public list.
  */
-export function StaffDirectory() {
+export function StaffDirectory({
+  members,
+  subjects,
+}: {
+  members: readonly PublicStaffMember[];
+  subjects: readonly string[];
+}) {
   const [query, setQuery] = useState("");
-  const [subject, setSubject] = useState(staffSubjects[0]);
-  const [group, setGroup] = useState<StaffGroup>(staffTabs[0]);
+  const [subject, setSubject] = useState(subjects[0] ?? "All subjects");
+  const [group, setGroup] = useState<string>(staffTabs[0]);
 
   const visibleMembers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return staffMembers.filter((member) => {
+    return members.filter((member) => {
       if (member.group !== group) return false;
-      if (subject !== staffSubjects[0] && member.subject !== subject) return false;
+      if (subject !== "All subjects" && member.subject !== subject) return false;
       if (!normalizedQuery) return true;
 
       return (
@@ -38,7 +43,7 @@ export function StaffDirectory() {
         member.designation.toLowerCase().includes(normalizedQuery)
       );
     });
-  }, [group, query, subject]);
+  }, [group, query, subject, members]);
 
   return (
     <>
@@ -71,7 +76,7 @@ export function StaffDirectory() {
           onQueryChange={setQuery}
           subject={subject}
           onSubjectChange={setSubject}
-          subjects={staffSubjects}
+          subjects={subjects}
         />
       </div>
 
@@ -93,7 +98,6 @@ export function StaffDirectory() {
                 imageHeight={member.imageHeight}
                 name={member.name}
                 designation={member.designation}
-                email={member.email}
               />
             </li>
           ))}

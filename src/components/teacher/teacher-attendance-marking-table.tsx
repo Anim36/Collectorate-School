@@ -3,17 +3,20 @@
 import Image from "next/image";
 
 import { cn } from "@/lib/utils";
-import type { AttendanceStatus, TeacherStudent } from "@/data/teacher";
+import type {
+  TeacherAttendanceStatus,
+  TeacherStudentRow,
+} from "@/types/teacher";
 
 export interface TeacherAttendanceMarkingTableProps {
   /** Title line above the rows. */
   title: string;
   /** Students shown on this page. */
-  students: readonly TeacherStudent[];
+  students: readonly TeacherStudentRow[];
   /** Marks of the students, keyed by student id. */
-  marks: Readonly<Record<string, AttendanceStatus>>;
+  marks: Readonly<Record<string, TeacherAttendanceStatus>>;
   /** Fired with the student id and the new status when a choice is picked. */
-  onMarkChange: (studentId: string, status: AttendanceStatus) => void;
+  onMarkChange: (studentId: string, status: TeacherAttendanceStatus) => void;
   /** Fired when the reader moves between pages. */
   onPageChange: (page: number) => void;
   /** Zero-based index of the visible page. */
@@ -28,7 +31,10 @@ export interface TeacherAttendanceMarkingTableProps {
 }
 
 /** The three choices a teacher can mark a student with. */
-const CHOICES: readonly { value: AttendanceStatus; label: string }[] = [
+const CHOICES: readonly {
+  value: TeacherAttendanceStatus;
+  label: string;
+}[] = [
   { value: "present", label: "Present" },
   { value: "absent", label: "Absent" },
   { value: "late", label: "Late" },

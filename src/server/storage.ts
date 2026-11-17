@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
@@ -286,6 +286,24 @@ export async function readFileBytes(storageKey: string): Promise<Buffer | null> 
     return await readFile(join(uploadFolder(), safeKey));
   } catch {
     return null;
+  }
+}
+
+/**
+ * The names of the files the storage holds.
+ *
+ * The database is the record of what the school owns; this list is what is
+ * actually on the disk. The difference is the orphan a sweep removes.
+ */
+export async function listStoredFileKeys(): Promise<string[]> {
+  try {
+    const entries = await readdir(uploadFolder(), { withFileTypes: true });
+
+    return entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
   }
 }
 

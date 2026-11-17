@@ -5,7 +5,9 @@
  * row, so the seed can be run again without duplicating anything.
  */
 import type { PrismaClient } from "../../src/generated/prisma/client";
-import { adminNav, studentNav, teacherNav } from "@/data/portal-navigation";
+import type { AdminFeeStructureRow } from "@/data/admin-11c";
+import type { Notice } from "@/data/notices";
+import type { RoutineDay, RoutinePeriod } from "@/data/routine";
 import { SEED_CLASSES } from "./classes";
 import {
   DEMO_STUDENT_PAYMENTS,
@@ -497,10 +499,10 @@ export async function seedFees(
     const band =
       seedClass.sortOrder >= 10
         ? SEED_DEMO_DATA.adminFeeStructure.find(
-            (row) => row.classBand === "9–10",
+            (row: AdminFeeStructureRow) => row.classBand === "9–10",
           )
         : SEED_DEMO_DATA.adminFeeStructure.find(
-            (row) => row.classBand === "6–8",
+            (row: AdminFeeStructureRow) => row.classBand === "6–8",
           );
 
     const monthlyTuition = band?.monthlyTuition ?? seedClass.monthlyTuition;
@@ -1076,7 +1078,7 @@ export async function seedNotices(
   for (const notice of SEED_DEMO_DATA.adminNotices) {
     const id = `notice-${notice.id}`;
 
-    if (SEED_DEMO_DATA.notices.some((row) => row.id === notice.id)) continue;
+    if (SEED_DEMO_DATA.notices.some((row: Notice) => row.id === notice.id)) continue;
 
     const record = await prisma.notice.upsert({
       where: { id },
@@ -1392,7 +1394,9 @@ function periodsOfClass(
   ];
 
   if (mock) {
-    return mock.map((day) => day.periods.map((period) => subjectKey(period.subject)));
+    return mock.map((day: RoutineDay) =>
+      day.periods.map((period: RoutinePeriod) => subjectKey(period.subject)),
+    );
   }
 
   const subjects = seedClass.subjects;
@@ -1541,108 +1545,6 @@ export async function seedSiteContent(prisma: PrismaClient): Promise<void> {
         label: stat.label,
         value: stat.value,
         position: index,
-      },
-    });
-  }
-
-  // The sidebar and the bottom tab bar of each portal.
-  const portalNavs = [
-    { role: "STUDENT" as const, config: studentNav },
-    { role: "TEACHER" as const, config: teacherNav },
-    { role: "ADMIN" as const, config: adminNav },
-  ];
-
-  for (const { role, config } of portalNavs) {
-    for (const [index, item] of config.items.entries()) {
-      await prisma.portalNavItem.upsert({
-        where: { id: `portal-nav-${role.toLowerCase()}-${index + 1}` },
-        update: { label: item.label, href: item.href, icon: item.icon },
-        create: {
-          id: `portal-nav-${role.toLowerCase()}-${index + 1}`,
-          role,
-          label: item.label,
-          href: item.href,
-          icon: item.icon,
-          kind: item.kind ?? "link",
-          position: index,
-        },
-      });
-    }
-
-    for (const [index, item] of config.bottomItems.entries()) {
-      await prisma.portalNavItem.upsert({
-        where: { id: `portal-nav-${role.toLowerCase()}-bottom-${index + 1}` },
-        update: { label: item.label, href: item.href, icon: item.icon },
-        create: {
-          id: `portal-nav-${role.toLowerCase()}-bottom-${index + 1}`,
-          role,
-          label: item.label,
-          href: item.href,
-          icon: item.icon,
-          kind: item.kind ?? "link",
-          position: index,
-        },
-      });
-    }
-
-    for (const [index, item] of config.moreItems.entries()) {
-      await prisma.portalNavItem.upsert({
-        where: { id: `portal-nav-${role.toLowerCase()}-more-${index + 1}` },
-        update: { label: item.label, href: item.href, icon: item.icon },
-        create: {
-          id: `portal-nav-${role.toLowerCase()}-more-${index + 1}`,
-          role,
-          label: item.label,
-          href: item.href,
-          icon: item.icon,
-          kind: item.kind ?? "link",
-          position: index,
-        },
-      });
-    }
-  }
-
-  // The navbar: a dropdown is a parent with children.
-  for (const [index, item] of SEED_DEMO_DATA.navItems.entries()) {
-    if (item.kind === "dropdown") {
-      await prisma.navigationItem.upsert({
-        where: { id: `nav-${index + 1}` },
-        update: { label: item.label },
-        create: {
-          id: `nav-${index + 1}`,
-          label: item.label,
-          position: index,
-          visible: true,
-        },
-      });
-
-      for (const [childIndex, child] of item.items.entries()) {
-        await prisma.navigationItem.upsert({
-          where: { id: `nav-${index + 1}-${childIndex + 1}` },
-          update: { label: child.label, href: child.href },
-          create: {
-            id: `nav-${index + 1}-${childIndex + 1}`,
-            label: child.label,
-            href: child.href,
-            parentId: `nav-${index + 1}`,
-            position: childIndex,
-            visible: true,
-          },
-        });
-      }
-
-      continue;
-    }
-
-    await prisma.navigationItem.upsert({
-      where: { id: `nav-${index + 1}` },
-      update: { label: item.label, href: item.href },
-      create: {
-        id: `nav-${index + 1}`,
-        label: item.label,
-        href: item.href,
-        position: index,
-        visible: true,
       },
     });
   }

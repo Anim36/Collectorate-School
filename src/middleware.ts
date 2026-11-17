@@ -36,6 +36,38 @@ export default auth((request) => {
   const { pathname } = request.nextUrl;
   const session = request.auth;
 
+  /**
+   * A write must come from the same host.
+   *
+   * Next.js checks the Origin of a server action itself; this check covers
+   * the route handlers and the Auth.js endpoints that the middleware sees as
+   * well, so the rule is one rule rather than two. A request without an
+   * Origin (a script, a health check) is left alone: only a browser sends the
+   * header, and a browser that sends a foreign one is the case this catches.
+   */
+  const method = request.method.toUpperCase();
+
+  if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+    const origin = request.headers.get("origin");
+
+    if (origin) {
+      let originHost: string | null = null;
+
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        originHost = null;
+      }
+
+      const host =
+        request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+
+      if (!originHost || (host && originHost !== host)) {
+        return new NextResponse("Forbidden", { status: 403 });
+      }
+    }
+  }
+
   const isSignedIn = Boolean(session?.user?.id);
   const role = session?.user?.role as SessionRole | undefined;
 

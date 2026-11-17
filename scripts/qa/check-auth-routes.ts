@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "@/generated/prisma/client";
+import { deleteQaAuditRows } from "./audit-cleanup";
 import {
   connectBrowser,
   sleep,
@@ -107,9 +108,7 @@ async function createTestAccounts(): Promise<void> {
 }
 
 async function removeTestAccounts(): Promise<void> {
-  await prisma.auditLog.deleteMany({
-    where: { entityId: { in: Object.values(IDS) } },
-  });
+  await deleteQaAuditRows(prisma, { entityIds: Object.values(IDS) });
 
   await prisma.user.deleteMany({
     where: { loginId: { in: Object.values(IDS) } },

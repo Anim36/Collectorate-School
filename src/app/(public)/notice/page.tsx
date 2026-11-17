@@ -7,12 +7,17 @@ export const metadata: Metadata = {
   title: "Notice",
   description:
     "Important announcements, dates and updates for our students and guardians.",
+  alternates: { canonical: "/notice" },
 };
 
 /**
  * Public notice board.
  * Figma "Public / Notice" (light 2:1480 / 2:1587 / 2:1688 and the matching
  * dark frames): a page introduction followed by the filterable notice board.
+ *
+ * The board reads the published public notices from the database through a
+ * read-only action, so the rows, the counts and the pagination are the real
+ * ones and every filter runs on the server.
  */
 export default function NoticePage() {
   return (

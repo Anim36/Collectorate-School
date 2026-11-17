@@ -11,6 +11,7 @@ import {
   type SessionRole,
 } from "@/server/auth-types";
 import { loginRoleSchema, type LoginRole } from "@/lib/login-schema";
+import { checkRateLimit, rateLimitBucket } from "@/server/rate-limit";
 
 /**
  * The sign-in form, validated before anything touches the database.
@@ -56,7 +57,8 @@ export type LoginFailureReason =
   | "wrong_password"
   | "inactive"
   | "locked"
-  | "role_mismatch";
+  | "role_mismatch"
+  | "rate_limited";
 
 /** The outcome of a sign-in attempt. */
 export type LoginResult =
@@ -137,8 +139,28 @@ async function writeAudit(input: {
  */
 export async function authenticateCredentials(
   raw: LoginInput,
-  options: { auditSuccess?: boolean } = {},
+  options: { auditSuccess?: boolean; rateLimit?: boolean } = {},
 ): Promise<LoginResult> {
+  // The address limit runs before the account is looked up, so a flood cannot
+  // be used to walk the account ids. The bucket is skipped when there is no
+  // request context (a script or a unit check), because `headers()` is only
+  // available inside a request.
+  if (options.rateLimit !== false) {
+    const bucket = await rateLimitBucket().catch(() => null);
+
+    if (bucket) {
+      const limit = await checkRateLimit("login", bucket);
+
+      if (!limit.allowed) {
+        // The comparison still runs, so a limited caller and a wrong password
+        // take the same time.
+        await bcrypt.compare("rate-limited", DUMMY_PASSWORD_HASH);
+
+        return refuse("rate_limited");
+      }
+    }
+  }
+
   const parsed = loginSchema.safeParse(raw);
 
   if (!parsed.success) {
@@ -241,40 +263,18 @@ export async function authenticateCredentials(
   // from the student tab, a teacher from the teacher tab and an admin from
   // the admin sign-in page. Nothing else is accepted.
   //
-  // The password has already been compared at this point, so a mismatch
-  // takes the same time as a wrong password, and it is counted as a failed
-  // attempt so the lockout cannot be walked around by using the wrong tab.
+  // A wrong tab is *not* a failed password attempt. The password was right,
+  // so counting it would let a student who taps "Teacher" twice lock their
+  // own account, and the old rule did exactly that. The address limiter above
+  // is what stops a caller walking the tabs to guess an id.
   if (user.role !== ROLE_FOR_ENTRY[role]) {
-    const failedLoginCount = user.failedLoginCount + 1;
-    const locked = failedLoginCount >= MAX_FAILED_LOGINS;
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        failedLoginCount,
-        lockedUntil: locked
-          ? new Date(now.getTime() + LOCKOUT_MINUTES * 60 * 1000)
-          : user.lockedUntil,
-      },
-    });
-
     await writeAudit({
       actorId: user.id,
-      action: "Login failed",
+      action: "Login refused",
       entityType: "Account",
       entityId: user.loginId,
       metadata: { reason: "role_mismatch" },
     });
-
-    if (locked) {
-      await writeAudit({
-        actorId: user.id,
-        action: "Account locked",
-        entityType: "Account",
-        entityId: user.loginId,
-        metadata: { minutes: LOCKOUT_MINUTES },
-      });
-    }
 
     return refuse("role_mismatch");
   }

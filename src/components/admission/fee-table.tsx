@@ -1,17 +1,13 @@
 import { cn } from "@/lib/utils";
-
-export interface FeeTableRow {
-  /** Name of the fee line, e.g. "Admission fee". */
-  fee: string;
-  /** Amount for the Classes 6–8 band. */
-  classes6to8: string;
-  /** Amount for the Classes 9–10 band. */
-  classes9to10: string;
-}
+import type { PublicFeeRow } from "@/types/public";
 
 export interface FeeTableProps {
-  /** Rows rendered in the table. */
-  rows: readonly FeeTableRow[];
+  /**
+   * One row per class, with the three fee amounts the school charges.
+   * The rows come from the `fee_structures` table through the public fees
+   * service; a class without a fee for the current year shows "—".
+   */
+  rows: readonly PublicFeeRow[];
   /** Accessible name for the table. */
   caption: string;
   className?: string;
@@ -23,11 +19,15 @@ export interface FeeTableProps {
  * border, 24px padding (25px from the frame edge once the border is added),
  * a 43px tinted header row, 44px body rows 16px apart and a 19px muted
  * footer line 16px below the last row. The rows follow the same rhythm as
- * the other shared tables: py-3 cells with a 16px transparent bottom border
- * and (100% - 12px) / 3 columns.
+ * the other shared tables: py-3 cells with a 16px transparent bottom border.
+ *
+ * The Figma frame showed fee lines against two class bands; the real table
+ * carries every class the school teaches, so the same chrome now holds one
+ * row per class with its three amounts. The amounts are formatted in taka
+ * from the integer poisha the database keeps.
  *
  * On mobile the same rows stack as labelled records (2:872–2:882): a
- * "Fee: …" headline, one line per band and a divider under each record.
+ * "Class: …" headline, one line per amount and a divider under each record.
  */
 export function FeeTable({ rows, caption, className }: FeeTableProps) {
   return (
@@ -37,13 +37,14 @@ export function FeeTable({ rows, caption, className }: FeeTableProps) {
         className,
       )}
     >
-      {/* Tablet and desktop — three equal columns with a tinted header row. */}
+      {/* Tablet and desktop — four columns with a tinted header row. */}
       <table className="hidden w-full table-fixed border-separate border-spacing-0 text-left md:table">
         <caption className="sr-only">{caption}</caption>
         <colgroup>
-          <col className="w-[calc((100%_-_12px)/3)]" />
-          <col className="w-[calc((100%_-_12px)/3)]" />
-          <col className="w-[calc((100%_-_12px)/3)]" />
+          <col className="w-[calc((100%_-_12px)/4)]" />
+          <col className="w-[calc((100%_-_12px)/4)]" />
+          <col className="w-[calc((100%_-_12px)/4)]" />
+          <col className="w-[calc((100%_-_12px)/4)]" />
         </colgroup>
         <thead>
           <tr>
@@ -51,51 +52,63 @@ export function FeeTable({ rows, caption, className }: FeeTableProps) {
               scope="col"
               className="border-b-[16px] border-transparent bg-clip-padding-box bg-tint py-3 pl-3 pr-0 text-caption font-semibold leading-[1.45] text-ink"
             >
-              Fee
+              Class
             </th>
             <th
               scope="col"
               className="border-b-[16px] border-transparent bg-clip-padding-box bg-tint py-3 pl-3 pr-0 text-caption font-semibold leading-[1.45] text-ink"
             >
-              Classes 6–8
+              Admission fee
             </th>
             <th
               scope="col"
               className="border-b-[16px] border-transparent bg-clip-padding-box bg-tint py-3 pl-3 pr-0 text-caption font-semibold leading-[1.45] text-ink"
             >
-              Classes 9–10
+              Monthly tuition
+            </th>
+            <th
+              scope="col"
+              className="border-b-[16px] border-transparent bg-clip-padding-box bg-tint py-3 pl-3 pr-0 text-caption font-semibold leading-[1.45] text-ink"
+            >
+              Annual activities
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.fee}>
+            <tr key={row.className}>
               <td className="border-b-[16px] border-transparent py-3 pl-3 pr-0 align-top text-body-md leading-[1.45] text-ink">
-                {row.fee}
+                {row.className}
               </td>
               <td className="border-b-[16px] border-transparent py-3 pl-3 pr-0 align-top text-body-md leading-[1.45] text-ink">
-                {row.classes6to8}
+                {row.admission}
               </td>
               <td className="border-b-[16px] border-transparent py-3 pl-3 pr-0 align-top text-body-md leading-[1.45] text-ink">
-                {row.classes9to10}
+                {row.tuition}
+              </td>
+              <td className="border-b-[16px] border-transparent py-3 pl-3 pr-0 align-top text-body-md leading-[1.45] text-ink">
+                {row.activities}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      {/* Mobile — each fee becomes a stacked record with a divider. */}
+      {/* Mobile — each class becomes a stacked record with a divider. */}
       <ul className="flex w-full flex-col gap-4 md:hidden">
         {rows.map((row) => (
-          <li key={row.fee} className="w-full">
+          <li key={row.className} className="w-full">
             <p className="text-body font-semibold leading-[1.45] text-ink">
-              Fee:&nbsp;&nbsp;{row.fee}
+              Class:&nbsp;&nbsp;{row.className}
             </p>
             <p className="mt-2 text-caption leading-[1.45] text-ink">
-              Classes 6–8:&nbsp;&nbsp;{row.classes6to8}
+              Admission fee:&nbsp;&nbsp;{row.admission}
             </p>
             <p className="mt-2 text-caption leading-[1.45] text-ink">
-              Classes 9–10:&nbsp;&nbsp;{row.classes9to10}
+              Monthly tuition:&nbsp;&nbsp;{row.tuition}
+            </p>
+            <p className="mt-2 text-caption leading-[1.45] text-ink">
+              Annual activities:&nbsp;&nbsp;{row.activities}
             </p>
             <div aria-hidden className="mt-2 h-px w-full bg-border" />
           </li>
